@@ -1,0 +1,20 @@
+# Dependencias de Node.js
+node_modules/
+
+# Entornos virtuales de Python
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Variables de entorno
+.env
+
+# Archivos de base de datos
+*.db
+*.sqlite3
+orbis.db
+
+# Logs y temporales
+*.log
+.DS_Store
