@@ -22,6 +22,12 @@ async def buscar_lugares_externos(categoria: str, lat: float, lon: float, radio_
 
 
 @tool_registry.register
+async def buscar_lugar_por_nombre(nombre: str, lat: float, lon: float):
+    """Ubica un lugar concreto por su nombre (p. ej. reconocido en una foto), cerca del usuario."""
+    return await geo_provider.buscar_lugar_por_nombre(nombre, lat, lon)
+
+
+@tool_registry.register
 async def calcular_ruta(origen_lat: float, origen_lon: float, destino_lat: float, destino_lon: float, modo: str = "drive"):
     """Distancia y tiempo reales por vía entre dos puntos."""
     return await geo_provider.calcular_ruta((origen_lat, origen_lon), (destino_lat, destino_lon), modo)

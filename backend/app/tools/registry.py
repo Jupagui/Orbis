@@ -17,7 +17,7 @@ class ToolRegistry:
     def get_tool(self, name: str) -> Callable:
         return self._tools.get(name)
         
-    async def execute(self, name: str, **kwargs) -> Any:
+    async def execute(self, name: str, /, **kwargs) -> Any:
         func = self.get_tool(name)
         if not func:
             raise ValueError(f"Herramienta no encontrada: {name}")

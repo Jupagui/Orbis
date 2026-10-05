@@ -53,6 +53,11 @@ class VerificadorAgent(BaseAgent):
                 advertencias.append("Algunas distancias no se pudieron confirmar con el servicio de mapas.")
             if clave in ("salud", "sabor", "taller") and not lugares:
                 advertencias.append("No se encontraron lugares verificados cerca de tu ubicación.")
+            if clave == "explora" and not lugares:
+                advertencias.append("No se pudo armar un recorrido: no hay puntos de interés verificados cerca.")
+            if state.context.get("lugar_no_ubicado"):
+                advertencias.append(f"Se reconoció '{state.context['lugar_no_ubicado']}', pero el servicio de mapas "
+                                    "no encontró su dirección. No se muestra una ubicación sin verificar.")
 
         # 4. Reglas de seguridad
         if intencion == "salud" and dominio and dominio.nivel_urgencia in ("alta", "emergencia"):
@@ -74,7 +79,8 @@ class VerificadorAgent(BaseAgent):
         fuentes = sorted({t["herramienta"] for t in state.trazas if t["herramienta"] and t["estado"] == "completed"})
 
         verificacion = Verificacion(
-            aprobado=bool(calidad and calidad.suficiente and not calidad.fuera_de_contexto and not calidad.contradicciones),
+            aprobado=bool(calidad and calidad.suficiente and not calidad.fuera_de_contexto
+                          and not calidad.contradicciones and (dominio is None or lugares or clave == "vial")),
             advertencias=advertencias,
             lugares_descartados=descartados,
             fuentes=fuentes,

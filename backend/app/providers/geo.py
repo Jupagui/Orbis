@@ -76,6 +76,37 @@ class GeoProvider:
             "barrio": address.get("suburb") or address.get("neighbourhood"), "fuente": "nominatim"
         }
 
+    # ---------- Lugar específico por nombre (p. ej. reconocido en una foto) ----------
+    async def buscar_lugar_por_nombre(self, nombre: str, lat: float, lon: float) -> dict | None:
+        """Devuelve el lugar solo si el servicio de mapas encontró un sitio concreto con buena confianza.
+        Un resultado a nivel de ciudad o calle no sirve: sería una dirección inventada."""
+        texto = f"{nombre}, Bogotá"
+        if self.geoapify_key:
+            resp = await self.client.get("https://api.geoapify.com/v1/geocode/search", params={
+                "text": texto, "apiKey": self.geoapify_key, "format": "json", "limit": 1, "lang": "es",
+                "filter": "countrycode:co", "bias": f"proximity:{lon},{lat}"
+            })
+            resp.raise_for_status()
+            results = resp.json().get("results")
+            if not results:
+                return None
+            r = results[0]
+            if r.get("result_type") not in ("amenity", "building") or r.get("rank", {}).get("confidence", 0) < 0.7:
+                return None
+            return {"nombre": r.get("name") or nombre, "direccion": r.get("formatted"),
+                    "lat": r["lat"], "lon": r["lon"], "fuente": "geoapify"}
+
+        resp = await self.client.get("https://nominatim.openstreetmap.org/search", params={
+            "q": texto, "format": "json", "limit": 1, "countrycodes": "co"
+        }, headers=NOMINATIM_HEADERS)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data or data[0].get("class") in ("boundary", "place", "highway"):
+            return None
+        r = data[0]
+        return {"nombre": r.get("name") or nombre, "direccion": r.get("display_name"),
+                "lat": float(r["lat"]), "lon": float(r["lon"]), "fuente": "nominatim"}
+
     # ---------- Geocodificación inversa: coordenadas -> dirección ----------
     @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
     async def reverse_geocode(self, lat: float, lon: float) -> dict | None:

@@ -48,15 +48,17 @@ class OrchestratorState:
         self.trazas.append(trace)
         log.info("Trace added", caso_id=self.caso_id, agente=agente, herramienta=herramienta, estado=estado)
 
-    async def usar_herramienta(self, agente: str, nombre: str, **kwargs) -> Any:
-        """Ejecuta una herramienta registrada y deja constancia en la traza de quién la usó y con qué datos."""
+    async def usar_herramienta(self, agente: str, herramienta: str, /, **kwargs) -> Any:
+        """Ejecuta una herramienta registrada y deja constancia en la traza de quién la usó y con qué datos.
+        agente y herramienta son solo posicionales (/) para que no choquen con argumentos de la
+        herramienta que se llamen igual (p. ej. buscar_lugar_por_nombre(nombre=...))."""
         inicio = time.perf_counter()
         try:
-            resultado = await tool_registry.execute(nombre, **kwargs)
-            self.add_trace(agente, nombre, kwargs, resultado, int((time.perf_counter() - inicio) * 1000), "completed")
+            resultado = await tool_registry.execute(herramienta, **kwargs)
+            self.add_trace(agente, herramienta, kwargs, resultado, int((time.perf_counter() - inicio) * 1000), "completed")
             return resultado
         except Exception as e:
-            self.add_trace(agente, nombre, kwargs, str(e), int((time.perf_counter() - inicio) * 1000), "error")
+            self.add_trace(agente, herramienta, kwargs, str(e), int((time.perf_counter() - inicio) * 1000), "error")
             raise
 
     def registrar_accion(self, tipo: str, detalle: Dict[str, Any]):

@@ -72,7 +72,7 @@ export default function CasoView() {
             {lugar.minutos_sugeridos ? <p style={{ margin: 0, fontSize: '0.85rem' }}>Visita sugerida: {lugar.minutos_sugeridos} min</p> : null}
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {lugar.ruta_verificada
-                ? <>{formatoDistancia(lugar.distancia_m)} · {Math.round(lugar.duracion_s / 60)} min <span style={{ color: 'var(--success)' }}>(ruta real)</span></>
+                ? <>{formatoDistancia(lugar.distancia_m)} · {Math.round(lugar.duracion_s / 60)} min{lugar.modo === 'drive' ? ' en carro' : lugar.modo === 'walk' ? ' a pie' : ''} <span style={{ color: 'var(--success)' }}>(ruta real)</span></>
                 : <span>Distancia no confirmada</span>}
               {lugar.fuente && <> · fuente: {lugar.fuente}</>}
             </div>
@@ -264,7 +264,8 @@ export default function CasoView() {
                     <div style={caja}>
                       <p style={{ margin: 0 }}>{r.explora.contexto}</p>
                       <p style={{ margin: '0.5rem 0 0 0' }}>
-                        <strong>Total:</strong> {formatoDistancia(r.explora.distancia_total_m)} a pie · {Math.round(r.explora.duracion_total_s / 60)} min con visitas
+                        <strong>Total:</strong> {formatoDistancia(r.explora.distancia_total_m)}
+                        {r.explora.paradas.some((p: any) => p.modo === 'drive') ? ' (incluye tramos en carro)' : ' a pie'} · {Math.round(r.explora.duracion_total_s / 60)} min con visitas
                       </p>
                     </div>
                     {renderLugares(r.explora.paradas)}

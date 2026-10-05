@@ -80,7 +80,7 @@ export default function Home() {
       title: 'Taller', 
       desc: 'Asistencia mecánica',
       placeholder: 'Ej: Mi carro empezó a echar humo azul...',
-      image: 'https://images.unsplash.com/photo-1503376710356-69f84bc0f443?auto=format&fit=crop&q=80&w=400&h=200'
+      image: 'https://images.unsplash.com/photo-1625047509248-ec889cbff17f?auto=format&fit=crop&q=80&w=400&h=200'
     },
     explora: { 
       title: 'Explora', 
@@ -99,7 +99,7 @@ export default function Home() {
         padding: '6rem 2rem 4rem', 
         textAlign: 'center', 
         backgroundColor: 'var(--surface-1)',
-        backgroundImage: 'linear-gradient(to bottom, rgba(20,20,20,0.8), var(--bg)), url(https://images.unsplash.com/photo-1583345214046-24e0da115599?auto=format&fit=crop&q=80&w=2000)',
+        backgroundImage: 'linear-gradient(to bottom, rgba(20,20,20,0.8), var(--bg)), url(https://images.unsplash.com/photo-1568632234157-ce7aecd03d0d?auto=format&fit=crop&q=80&w=2000)',
         backgroundSize: 'cover',
         backgroundPosition: 'center'
       }}>

@@ -92,9 +92,12 @@ class ParadaResult(LugarBase):
     orden: int
     minutos_sugeridos: int
     descripcion: Optional[str] = None
+    modo: str = "walk"  # walk | drive (lo define el sistema según la distancia)
+    fuente: str = "propia"
 
 class ResultadoExplora(BaseModel):
     lugar_identificado: str
+    nombre_propio: Optional[str] = Field(default=None, description="Nombre propio del lugar específico reconocido (p. ej. 'Ichiraku Ramen'), para buscarlo en el mapa. Vacío si es genérico o no se reconoce.")
     confianza: float
     requiere_confirmacion: bool
     contexto: str
