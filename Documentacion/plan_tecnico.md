@@ -19,7 +19,7 @@
 |---|---|---|---|
 | **Vía** · Problemas viales | "Hay un hueco enorme aquí" + foto + ubicación | Tipo de daño, severidad, riesgo, entidad responsable, reportes duplicados a < 150 m | **Crea un reporte vial** (visible en el Tablero de Calor) |
 | **Salud** · Orientación | "Me duele mucho el pecho y el brazo izquierdo" | Urgencia, especialidad, señales de alarma, qué hacer / qué no hacer, centros cercanos con ruta real | **Guarda la recomendación** del centro con menor tiempo de llegada |
-| **Sabor** · Comida | "Antojo de hamburguesa, máximo 40 mil" | Lugares a ≤ 2 km con motivo, precio (solo si está verificado) y ruta a pie | **Guarda la recomendación** principal |
+| **Sabor** · Comida | "Antojo de hamburguesa, máximo 40 mil" / "los 5 mejores ajiacos" | Lugares que coinciden con el plato (búsqueda que amplía el radio si hace falta), con motivo, precio (solo si está verificado) y ruta | **Guarda la recomendación** principal |
 | **Taller** · Asistencia vehicular | "Mi carro echa humo" + foto del tablero | Falla probable, urgencia, ¿puede conducir?, pasos de seguridad, talleres cercanos con ruta | **Crea una solicitud de asistencia** (estado `abierta`) |
 | **Explora** · Turismo | Foto de un lugar + "tengo 3 horas, me gustan los museos" | Lugar reconocido (buscado por nombre en el mapa si no está en los datos propios), recorrido ordenado con tiempos y rutas | **Guarda el recorrido** (paradas, distancia y duración total) |
 
@@ -37,7 +37,7 @@
 | 1. Arquitectura | Secciones 3–6 de este documento y sección 2 del README (corresponden al código) |
 | 2. Multimodal + estructurado | Texto + imagen + GPS o dirección. Gemini recibe la imagen y responde JSON validado con esquemas Pydantic por dominio. `calidad_informacion` detecta datos insuficientes, contradicciones (p. ej. la foto no coincide con el texto) o solicitudes fuera de contexto → estado `requiere_info`, sin ejecutar acciones |
 | 3. Datos propios + geo | SQLite con lugares, especialidades, guías, puntos de interés y reportes. **Geoapify** (geocodificación, inversa, lugares, rutas) con respaldo **OpenStreetMap** (Nominatim, Overpass, OSRM de FOSSGIS) |
-| 4. Herramientas y acciones | 16 herramientas en un registro central; 4 acciones reales que escriben en la BD |
+| 4. Herramientas y acciones | 17 herramientas en un registro central; 4 acciones reales que escriben en la BD |
 | 5. Chat contextual | Chat por caso con el resultado + salidas reales de las herramientas; dice explícitamente cuando no tiene un dato verificado |
 | 6. Agentes y orquestación | 9 agentes con responsabilidades separadas + orquestador determinista (`Pipeline`) |
 | 7. Persistencia y trazabilidad | Tablas `casos`, `trazas`, `mensajes_chat` y de acciones. Vista "¿Cómo se obtuvo este resultado?" e Historial |
@@ -51,7 +51,7 @@
 | Backend | **Python 3.11+ · FastAPI** (async) + Uvicorn | Continuidad con el proyecto base; async para la E/S de IA y mapas |
 | Validación / config | Pydantic v2 + `pydantic-settings` (`.env`) | Esquemas de respuesta estructurada y configuración por entorno |
 | BD | **SQLAlchemy 2.0 async + aiosqlite + SQLite** (WAL, `foreign_keys=ON`) | Sin servidor de BD; migrable a PostgreSQL cambiando `DATABASE_URL` |
-| IA | **Google GenAI SDK** · `gemini-3.1-flash-lite` (configurable con `GEMINI_MODEL`) | Multimodal, salida JSON con esquema, baja latencia, cuota gratuita |
+| IA | **Google GenAI SDK** · `gemini-3.1-flash-lite` (configurable con `GEMINI_MODEL`) + modelos de respaldo (`GEMINI_MODELOS_RESPALDO`) | Multimodal, salida JSON con esquema, baja latencia, cuota gratuita; si el modelo está saturado (503/429) se prueba el siguiente |
 | Mapas | **Geoapify** · respaldo **Nominatim / Overpass / OSRM (FOSSGIS)** | 3.000 créditos/día gratis sin tarjeta; el respaldo permite funcionar sin clave |
 | HTTP | `httpx.AsyncClient` + `tenacity` (reintentos con backoff) | Resiliencia ante caídas o saturación de APIs externas |
 | Imagen | Pillow (orientación EXIF, reducción a 1600 px, JPEG) | Fotos de celular de varios MB → pocos cientos de KB antes de enviarlas al modelo |
@@ -118,7 +118,7 @@ seed/                → datos propios de Bogotá (se cargan solos al iniciar)
 | **GeoAgent** | Resolver dónde está el usuario y alertas de la zona | GPS o dirección escrita | `geocodificar_direccion`, `identificar_direccion`, `consultar_reportes_cercanos` | `UbicacionResuelta` (+ marca si es aproximada) y alertas comunitarias |
 | **VialAgent** | Diagnosticar el daño y registrar el reporte | Texto, imagen, ubicación | `consultar_reportes_cercanos`, **`crear_reporte_vial`** | Tipo, severidad, riesgo, entidad, duplicados, `reporte_id` |
 | **SaludAgent** | Orientar urgencia, especialidad y estabilización | Síntomas, imagen, ubicación | `evaluar_senales_alarma`, `consultar_lugares_propios`, `consultar_guias_estabilizacion`, `buscar_lugares_externos`, `calcular_ruta`, **`guardar_recomendacion`** | Urgencia, especialidad, pasos, centros con ruta real |
-| **SaborAgent** | Recomendar dónde comer | Antojo, presupuesto, ubicación | `consultar_lugares_propios`, `buscar_lugares_externos`, `calcular_ruta`, **`guardar_recomendacion`** | Lugares con motivo, precio verificado o no, ruta a pie |
+| **SaborAgent** | Recomendar dónde comer | Antojo, presupuesto, cantidad pedida, ubicación | Gemini (plan de búsqueda), `buscar_lugares_por_texto` (radio progresivo 2 → 8 → 25 km), `consultar_lugares_propios`, `buscar_lugares_externos`, `calcular_ruta`, **`guardar_recomendacion`** | Hasta 10 lugares con motivo, precio verificado o no, ruta a pie o en carro según la distancia |
 | **TallerAgent** | Orientar sobre la falla y abrir la asistencia | Falla, foto, ubicación | `evaluar_riesgo_vehicular`, `consultar_lugares_propios`, `buscar_lugares_externos`, `calcular_ruta`, **`crear_solicitud_asistencia`** | Falla, urgencia, `puede_conducir`, pasos, talleres, `solicitud_id` |
 | **ExploraAgent** | Reconocer el lugar y diseñar el recorrido | Foto, intereses, tiempo, ubicación | `consultar_puntos_interes`, `buscar_lugar_por_nombre`, `calcular_ruta`, **`guardar_recorrido`** | Lugar, paradas ordenadas con rutas (a pie o en carro si el tramo > 2,5 km), `recorrido_id` |
 | **VerificadorAgent** | Control de calidad **sin LLM** y respuesta final | Salidas de todos los agentes + trazas | — | `RespuestaFinal` con `verificacion` (aprobado, advertencias, descartados, fuentes) y **`prioridad`** |
@@ -164,6 +164,7 @@ Todas se registran en `tools/registry.py`. Los agentes las invocan con `state.us
 | `geocodificar_direccion(direccion)` | Mapas | Geoapify → Nominatim |
 | `identificar_direccion(lat, lon)` | Mapas | Geoapify → Nominatim |
 | `buscar_lugares_externos(categoria, lat, lon, radio_m)` | Mapas | Geoapify Places → Overpass |
+| `buscar_lugares_por_texto(palabras, lat, lon, radio_m)` | Mapas | Geoapify → Overpass + Nominatim (plato, nombre o tipo de cocina) |
 | `buscar_lugar_por_nombre(nombre, lat, lon)` | Mapas | Geoapify → Nominatim (solo resultados concretos, confianza ≥ 0,7) |
 | `calcular_ruta(origen, destino, modo)` | Mapas | Geoapify Routing → OSRM (FOSSGIS) |
 | **`crear_reporte_vial(...)`** | **Acción** | SQLite |
@@ -372,7 +373,7 @@ Mientras el caso se procesa, la vista consulta el estado cada 2 s y muestra "Los
 | Planeado | Implementado | Razón |
 |---|---|---|
 | Progreso en vivo por **SSE** (`/casos/{id}/eventos`) | Sondeo cada 2 s + traza completa al terminar | Menos complejidad; el análisis dura entre 5 y 30 s y la traza muestra el detalle de cada paso |
-| `gemini-2.5-flash` + `flash-lite` | `gemini-3.1-flash-lite`, configurable | `gemini-2.5-flash` no estaba disponible para la cuenta (404) |
+| `gemini-2.5-flash` + `flash-lite` | `gemini-3.1-flash-lite`, configurable, con respaldo `gemini-3.5-flash-lite` → `gemini-flash-lite-latest` → `gemini-3.5-flash` | La familia 2.5 y `gemini-2.0-flash` responden 404 ("no longer available to new users"); los respaldos se verificaron uno por uno con imagen + JSON |
 | Tabla `acciones` | Las acciones viven en sus tablas (`reportes_viales`, `solicitudes_asistencia`, `recorridos`, `recomendaciones`), en `resultado_json.acciones` y en la traza | Evita duplicar información |
 | Capas `repositories/` y `services/` | Las herramientas acceden a la BD con sesiones async | Proyecto pequeño; las carpetas existen para crecer |
 | Wikipedia para Explora, `extraer_exif_gps`, `optimizar_recorrido` | Puntos de interés propios + `buscar_lugar_por_nombre` en el mapa; el modelo ordena las paradas y el mapa calcula las rutas | Prioridad en cumplir la rúbrica con datos verificables |
@@ -387,4 +388,4 @@ Mientras el caso se procesa, la vista consulta el estado cada 2 s y muestra "Los
 - Pruebas automáticas de agentes y herramientas con respuestas simuladas de Gemini y de los mapas.
 - Cola de tareas (Arq/Celery) en lugar de `BackgroundTasks` y PostgreSQL para varios usuarios.
 - Autenticación y roles (ciudadano / operador que atiende reportes y solicitudes).
-- Si Gemini responde `503 high demand`, el sistema reintenta 3 veces y luego marca el caso con error; se puede volver a enviar.
+- Si Gemini responde `503 high demand` o `429`, el sistema prueba los modelos de respaldo y reintenta; si todos fallan, el caso queda en error y se puede volver a enviar.

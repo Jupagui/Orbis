@@ -26,11 +26,38 @@ class AIProvider:
     def __init__(self):
         # El modelo se define en .env (GEMINI_MODEL) para poder cambiarlo sin tocar código
         self.model = settings.GEMINI_MODEL
+        self.respaldos = [m.strip() for m in settings.GEMINI_MODELOS_RESPALDO.split(",") if m.strip()]
 
     def _require_client(self):
         if not client:
             log.warning("Intento de usar IA sin GEMINI_API_KEY configurada")
             raise ValueError("GEMINI_API_KEY no configurada")
+
+    @staticmethod
+    def _es_saturacion(e: Exception) -> bool:
+        """Errores temporales del lado de Google en los que vale la pena cambiar de modelo."""
+        texto = str(e).upper()
+        return any(s in texto for s in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "OVERLOADED",
+                                        "HIGH DEMAND", "404", "NOT_FOUND"))
+
+    async def _llamar_con_respaldo(self, modelo_principal: str, contents, config):
+        """Prueba el modelo principal y, si está saturado, los de respaldo en orden."""
+        modelos = [modelo_principal] + [m for m in self.respaldos if m != modelo_principal]
+        ultimo_error = None
+        for modelo in modelos:
+            def _call_api(m=modelo):
+                return client.models.generate_content(model=m, contents=contents, config=config)
+            try:
+                respuesta = await asyncio.get_running_loop().run_in_executor(None, _call_api)
+                if modelo != modelo_principal:
+                    log.info("Respuesta obtenida con modelo de respaldo", modelo=modelo)
+                return respuesta
+            except Exception as e:
+                ultimo_error = e
+                if not self._es_saturacion(e):
+                    raise
+                log.warning("Modelo saturado o no disponible, probando respaldo", modelo=modelo, error=str(e)[:150])
+        raise ultimo_error
 
     @retry(
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -53,11 +80,8 @@ class AIProvider:
         # Multimodal: si hay imagen, se envía junto con el texto
         contents = [imagen_a_part(imagen_path), prompt] if imagen_path else [prompt]
 
-        def _call_api():
-            return client.models.generate_content(model=target_model, contents=contents, config=config)
-
         try:
-            response = await asyncio.get_running_loop().run_in_executor(None, _call_api)
+            response = await self._llamar_con_respaldo(target_model, contents, config)
             # Validar que cumpla con el esquema pasándolo por Pydantic
             return response_schema.model_validate(json.loads(response.text))
         except Exception as e:
@@ -83,10 +107,7 @@ class AIProvider:
 
         config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.2)
 
-        def _call_api():
-            return client.models.generate_content(model=self.model, contents=contents, config=config)
-
-        response = await asyncio.get_running_loop().run_in_executor(None, _call_api)
+        response = await self._llamar_con_respaldo(self.model, contents, config)
         return response.text
 
 

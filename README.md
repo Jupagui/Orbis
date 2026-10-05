@@ -76,7 +76,7 @@ El orquestador (`orchestrator/pipeline.py`) es **determinista**: el orden es fij
 | **VialAgent** | Diagnosticar daños en la vía | Texto, imagen, ubicación | `consultar_reportes_cercanos`, `crear_reporte_vial` | `ResultadoVial` + reporte creado |
 | **SaludAgent** | Orientar sin diagnosticar | Síntomas, imagen, ubicación | `evaluar_senales_alarma` (reglas), `consultar_lugares_propios`, `consultar_guias_estabilizacion`, `buscar_lugares_externos`, `calcular_ruta`, `guardar_recomendacion` | `ResultadoSalud` + recomendación guardada |
 | **TallerAgent** | Orientar sobre fallas del vehículo | Falla, imagen, ubicación | `evaluar_riesgo_vehicular` (reglas), `consultar_lugares_propios`, `buscar_lugares_externos`, `calcular_ruta`, `crear_solicitud_asistencia` | `ResultadoTaller` + solicitud abierta |
-| **SaborAgent** | Recomendar dónde comer | Antojo, presupuesto, ubicación | `consultar_lugares_propios`, `buscar_lugares_externos`, `calcular_ruta`, `guardar_recomendacion` | `ResultadoSabor` + recomendación guardada |
+| **SaborAgent** | Recomendar dónde comer | Antojo, presupuesto, cantidad pedida, ubicación | Gemini (plan de búsqueda), `buscar_lugares_por_texto` (radio progresivo 2 → 8 → 25 km), `consultar_lugares_propios`, `buscar_lugares_externos`, `calcular_ruta`, `guardar_recomendacion` | `ResultadoSabor` + recomendación guardada |
 | **ExploraAgent** | Reconocer el lugar y armar el recorrido | Intereses, tiempo, imagen, ubicación | `consultar_puntos_interes`, `buscar_lugar_por_nombre`, `calcular_ruta` (a pie, o en carro si el tramo supera 2,5 km), `guardar_recorrido` | `ResultadoExplora` + recorrido guardado |
 | **VerificadorAgent** | Control de calidad y **priorización** **sin LLM** antes de responder | Salidas de todos los agentes y trazas | — | `Verificacion` (aprobado, advertencias, lugares descartados, fuentes usadas) y `prioridad` |
 | **ChatAgent** | Responder preguntas de seguimiento | Resultado del caso + salidas de herramientas + historial | Gemini | Respuesta en texto, guardada en `mensajes_chat` |
@@ -124,7 +124,7 @@ Todas las herramientas se registran en `tools/registry.py` y los agentes las inv
 | Tipo | Herramientas |
 |---|---|
 | Datos propios | `consultar_lugares_propios`, `consultar_guias_estabilizacion`, `consultar_puntos_interes`, `consultar_reportes_cercanos`, `consultar_especialidades` |
-| Servicio de mapas | `geocodificar_direccion`, `identificar_direccion`, `buscar_lugares_externos`, `buscar_lugar_por_nombre`, `calcular_ruta` |
+| Servicio de mapas | `geocodificar_direccion`, `identificar_direccion`, `buscar_lugares_externos`, `buscar_lugares_por_texto`, `buscar_lugar_por_nombre`, `calcular_ruta` |
 | Reglas | `evaluar_senales_alarma`, `evaluar_riesgo_vehicular` |
 | **Acciones** (cambian el sistema) | `crear_reporte_vial`, `crear_solicitud_asistencia`, `guardar_recorrido`, `guardar_recomendacion` |
 
@@ -149,7 +149,7 @@ Las acciones ejecutadas aparecen en la interfaz en "Acciones realizadas" con su 
 
 ## 9. Modelo de IA
 
-**Modelo:** Google Gemini (`gemini-3.1-flash-lite` por defecto, configurable con `GEMINI_MODEL`).
+**Modelo:** Google Gemini (`gemini-3.1-flash-lite` por defecto, configurable con `GEMINI_MODEL`). Si está saturado (503) o sin cuota (429), se prueban en orden los modelos de `GEMINI_MODELOS_RESPALDO`.
 
 **Por qué:**
 - **Multimodal nativo** (texto + imagen en la misma llamada), necesario para Triage, Vial, Taller y Explora.
@@ -186,6 +186,7 @@ Ejecutar `iniciar_sistema.bat` desde la raíz del proyecto, después de crear `b
    |---|---|---|
    | `GEMINI_API_KEY` | Sí | Clave de Google AI Studio (https://aistudio.google.com/apikey) |
    | `GEMINI_MODEL` | No | Modelo de Gemini (por defecto `gemini-3.1-flash-lite`) |
+   | `GEMINI_MODELOS_RESPALDO` | No | Modelos separados por coma que se prueban si el principal está saturado (503/429) |
    | `GEOAPIFY_API_KEY` | Recomendada | Clave gratuita de https://myprojects.geoapify.com. Si se deja vacía se usa OpenStreetMap |
    | `DATABASE_URL` | No | Por defecto SQLite local `orbis.db` |
    | `UPLOADS_DIR`, `IMAGEN_LADO_MAXIMO` | No | Carpeta y tamaño máximo de las imágenes |
