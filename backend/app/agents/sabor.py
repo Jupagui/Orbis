@@ -1,96 +1,89 @@
 from app.orchestrator.state import BaseAgent, OrchestratorState
 from app.providers.ai import ai_provider
 from app.schemas.domain import ResultadoSabor
-from app.tools.local import consultar_lugares_propios
-import structlog
+from app.agents.comun import REGLA_GROUNDING, origen, filtrar_y_ubicar, completar_rutas, texto_alertas
+import app.tools.local  # noqa: F401
+import app.tools.actions  # noqa: F401
+import app.tools.geo  # noqa: F401
 import json
+import structlog
 
 log = structlog.get_logger()
 
+RADIO_A_PIE_M = 2000
+
+
 class SaborAgent(BaseAgent):
+    """Recomienda lugares de comida combinando datos propios y lugares reales del mapa."""
+
     def __init__(self):
         super().__init__("SaborAgent")
-        
-    async def _process(self, state: OrchestratorState) -> None:
+
+    async def _process(self, state: OrchestratorState):
         texto = state.context.get("texto_usuario", "")
-        ubicacion = state.context.get("ubicacion")
-        
-        lat = ubicacion.lat if ubicacion else 4.6097
-        lon = ubicacion.lon if ubicacion else -74.0817
-        
-        # 1. Obtener restaurantes de la DB Local
-        restaurantes_db = await consultar_lugares_propios("restaurante", lat, lon, radio_m=5000)
-        
-        # 2. Obtener restaurantes reales de OpenStreetMap (locales en la zona)
-        restaurantes_reales = []
+        lat, lon = origen(state)
+
+        # 1. Datos propios (tienen precio y rating verificados). Mismo radio que los externos:
+        #    las recomendaciones de comida son para ir caminando.
+        propios = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="restaurante", lat=lat, lon=lon, radio_m=RADIO_A_PIE_M)
+        for r in propios:
+            r["fuente"] = "propia"
+
+        # 2. Lugares reales del servicio de mapas
         try:
-            import httpx
-            from app.tools.local import haversine_distance
-            query = f"""
-            [out:json][timeout:10];
-            (
-              node["amenity"~"restaurant|cafe|fast_food"](around:2000,{lat},{lon});
-            );
-            out body 15;
-            """
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post("https://overpass-api.de/api/interpreter", data=query)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for el in data.get("elements", []):
-                        tags = el.get("tags", {})
-                        name = tags.get("name")
-                        if not name: continue
-                        
-                        dist = haversine_distance(lat, lon, el.get("lat"), el.get("lon"))
-                        restaurantes_reales.append({
-                            "nombre": name,
-                            "tipo": tags.get("amenity", "local"),
-                            "cocina": tags.get("cuisine", "comida local"),
-                            "distancia_m": int(dist),
-                            "direccion": tags.get("addr:street", "En la zona")
-                        })
+            externos = await state.usar_herramienta(self.name, "buscar_lugares_externos", categoria="restaurante", lat=lat, lon=lon, radio_m=RADIO_A_PIE_M)
         except Exception as e:
-            log.error("Error Overpass API", error=str(e))
-            
-        # Combinar y eliminar duplicados por nombre
-        vistos = set()
-        restaurantes = []
-        for r in (restaurantes_db + restaurantes_reales):
-            name_lower = r["nombre"].lower().strip()
-            if name_lower not in vistos:
-                vistos.add(name_lower)
+            log.error("No se pudieron consultar lugares externos", error=str(e))
+            externos = []
+
+        # Combinar y eliminar duplicados por nombre (los propios primero)
+        vistos, restaurantes = set(), []
+        for r in propios + externos:
+            nombre = r["nombre"].lower().strip()
+            if nombre not in vistos:
+                vistos.add(nombre)
                 restaurantes.append(r)
-                
-        restaurantes.sort(key=lambda x: x.get("distancia_m", 9999))
-        restaurantes = restaurantes[:25] # Damos 25 opciones reales a la IA
-        
+        restaurantes = restaurantes[:25]
+
         system_instruction = """
-        Eres el agente Sabor de ORBIS. Tu tarea es encontrar los mejores lugares de comida cercanos
-        según el antojo, tipo de cocina y presupuesto del usuario.
-        Debes elegir y rankear los restaurantes usando SOLAMENTE la lista proporcionada.
-        Para cada lugar, proporciona un motivo corto y persuasivo de por qué fue elegido.
-        Si en la lista hay un precio promedio, márcalo como 'precio_verificado': true.
-        
-        REGLA: SIEMPRE debes retornar AL MENOS 3 restaurantes sugeridos de la lista proporcionada.
-        """
-        
-        alertas_comunitarias = "\n".join(state.context.get("alertas_comunitarias", []))
-        alerta_text = f"ALERTAS EN LA ZONA:\n{alertas_comunitarias}\nConsidera advertir al usuario si es relevante." if alertas_comunitarias else ""
-        
+        Eres el agente Sabor de ORBIS. Encuentras lugares de comida cercanos según el antojo,
+        tipo de cocina y presupuesto del usuario. Elige y ordena los restaurantes de la lista
+        con un motivo corto de por qué fue elegido.
+        precio_verificado=true SOLO si el lugar trae precio_promedio en la lista; si no, precio_promedio=null.
+        """ + REGLA_GROUNDING
+
         prompt = f"""
         Antojo/Petición: '{texto}'
-        {alerta_text}
-        
+        {texto_alertas(state)}
+
         Restaurantes cercanos disponibles:
-        {json.dumps(restaurantes, indent=2)}
+        {json.dumps(restaurantes, indent=2, ensure_ascii=False)}
         """
-        
+
         resultado: ResultadoSabor = await ai_provider.generate_structured(
             prompt=prompt,
             response_schema=ResultadoSabor,
-            system_instruction=system_instruction
+            system_instruction=system_instruction,
+            imagen_path=state.context.get("imagen_path")
         )
-        
+
+        sugeridos = [l.nombre for l in resultado.lugares]
+        resultado.lugares = filtrar_y_ubicar(resultado.lugares, restaurantes)
+        state.context.setdefault("descartados", []).extend(n for n in sugeridos if n not in [l.nombre for l in resultado.lugares])
+        await completar_rutas(state, self.name, resultado.lugares, modo="walk")
+
+        # Acción: guardar la recomendación principal
+        if resultado.lugares:
+            elegido = resultado.lugares[0]
+            lugar = next((r for r in restaurantes if r["nombre"] == elegido.nombre), {})
+            accion = await state.usar_herramienta(
+                self.name, "guardar_recomendacion",
+                caso_id=state.caso_id, lugar_id=lugar.get("id") if lugar.get("fuente") == "propia" else None,
+                distancia_m=elegido.distancia_m, duracion_s=elegido.duracion_s, motivo=elegido.motivo,
+                fuente=elegido.fuente
+            )
+            state.registrar_accion("recomendacion_guardada", {"id": accion["recomendacion_id"], "lugar": elegido.nombre})
+
         state.context["sabor"] = resultado
         log.info("Agente Sabor completado", tipo_cocina=resultado.tipo_cocina)
+        return resultado

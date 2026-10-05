@@ -1,6 +1,6 @@
 from sqlalchemy import select, and_
 from app.core.db import AsyncSessionLocal
-from app.models.domain import Lugar, Especialidad, LugarEspecialidad, GuiaEstabilizacion, PuntoInteres
+from app.models.domain import Lugar, Especialidad, LugarEspecialidad, GuiaEstabilizacion, PuntoInteres, ReporteVial
 from app.tools.registry import tool_registry
 import structlog
 import json
@@ -93,6 +93,19 @@ async def consultar_puntos_interes(lat: float, lon: float, radio_m: int = 5000):
                     "costo_entrada": p.costo_entrada
                 })
         cercanos.sort(key=lambda x: x["distancia_m"])
+        return cercanos
+
+@tool_registry.register
+async def consultar_reportes_cercanos(lat: float, lon: float, radio_m: int = 150):
+    """Reportes viales ya registrados cerca del punto (para detectar duplicados)."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(ReporteVial).where(ReporteVial.estado != "resuelto"))
+        cercanos = []
+        for r in result.scalars().all():
+            dist = haversine(lat, lon, r.lat, r.lon)
+            if dist <= radio_m:
+                cercanos.append({"id": r.id, "tipo_problema": r.tipo_problema, "severidad": r.severidad,
+                                 "estado": r.estado, "distancia_m": dist})
         return cercanos
 
 @tool_registry.register

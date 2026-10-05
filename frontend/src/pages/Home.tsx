@@ -1,15 +1,37 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { reportarCaso } from '../services/api';
-import { Camera, MapPin, Activity, Utensils, Wrench, Map, X, Search, ChevronRight } from 'lucide-react';
+import { Camera, MapPin, Activity, Utensils, Wrench, Map, X, Search, ChevronRight, History } from 'lucide-react';
 
 type Topic = 'vial' | 'salud' | 'comida' | 'taller' | 'explora' | null;
 
+// Pide el GPS al navegador. Si el usuario lo niega o tarda mucho, devuelve null
+// (el backend lo marca como "ubicación no confirmada" en vez de inventar una).
+function obtenerUbicacion(): Promise<{ lat: number; lon: number } | null> {
+  return new Promise((resolve) => {
+    if (!('geolocation' in navigator)) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => resolve(null),
+      { timeout: 8000 }
+    );
+  });
+}
+
 export default function Home() {
   const [desc, setDesc] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [imagen, setImagen] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const elegirImagen = (file: File | null) => {
+    if (preview) URL.revokeObjectURL(preview);
+    setImagen(file);
+    setPreview(file ? URL.createObjectURL(file) : null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,38 +39,20 @@ export default function Home() {
     setLoading(true);
 
     try {
-      if ("geolocation" in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            try {
-              const res = await reportarCaso(desc, selectedTopic || undefined, position.coords.latitude, position.coords.longitude);
-              navigate(`/casos/${res.id}`);
-            } catch (error) {
-              console.error(error);
-              alert('Error enviando reporte');
-              setLoading(false);
-            }
-          },
-          async (err) => {
-            console.warn("Location error:", err);
-            // Fallback si niega permiso: centro de Bogotá
-            try {
-              const res = await reportarCaso(desc, selectedTopic || undefined, 4.6097, -74.0817);
-              navigate(`/casos/${res.id}`);
-            } catch (error) {
-              alert('Error enviando reporte');
-              setLoading(false);
-            }
-          }
-        );
-      } else {
-        // Fallback si no soporta
-        const res = await reportarCaso(desc, selectedTopic || undefined, 4.6097, -74.0817);
-        navigate(`/casos/${res.id}`);
-      }
-    } catch (error) {
+      // Si escribió una dirección no hace falta pedir el GPS
+      const gps = direccion ? null : await obtenerUbicacion();
+      const res = await reportarCaso({
+        descripcion: desc,
+        tipo: selectedTopic || undefined,
+        lat: gps?.lat,
+        lon: gps?.lon,
+        direccion: direccion || undefined,
+        imagen,
+      });
+      navigate(`/casos/${res.id}`);
+    } catch (error: any) {
       console.error(error);
-      alert('Error enviando reporte');
+      alert(error?.response?.data?.detail || 'Error enviando reporte');
       setLoading(false);
     }
   };
@@ -99,8 +103,14 @@ export default function Home() {
         backgroundSize: 'cover',
         backgroundPosition: 'center'
       }}>
-        <div style={{ position: 'absolute', top: '1.5rem', right: '2rem', zIndex: 10 }}>
-          <button 
+        <div style={{ position: 'absolute', top: '1.5rem', right: '2rem', zIndex: 10, display: 'flex', gap: '0.8rem' }}>
+          <button
+            onClick={() => navigate('/historial')}
+            style={{ padding: '0.8rem 1.5rem', borderRadius: '30px', backgroundColor: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <History size={18} /> Historial
+          </button>
+          <button
             onClick={() => navigate('/heatmap')}
             style={{ padding: '0.8rem 1.5rem', borderRadius: '30px', backgroundColor: 'var(--accent-via)', color: '#fff', border: 'none', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}
           >
@@ -204,7 +214,48 @@ export default function Home() {
                     autoFocus
                   />
                 </div>
-                
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
+                      Foto (opcional):
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', minHeight: '120px', border: '1px dashed var(--border)', borderRadius: 'var(--radius-md)', cursor: 'pointer', backgroundColor: 'var(--bg)', color: 'var(--text-muted)', overflow: 'hidden', position: 'relative' }}>
+                      {preview ? (
+                        <img src={preview} alt="Vista previa de la foto adjunta" style={{ width: '100%', height: '120px', objectFit: 'cover' }} />
+                      ) : (
+                        <><Camera size={20} /> Adjuntar imagen</>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => elegirImagen(e.target.files?.[0] || null)}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    {imagen && (
+                      <button type="button" onClick={() => elegirImagen(null)} style={{ marginTop: '0.4rem', background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                        Quitar imagen
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
+                      Dirección o punto de origen (opcional):
+                    </label>
+                    <input
+                      type="text"
+                      value={direccion}
+                      onChange={(e) => setDireccion(e.target.value)}
+                      placeholder="Ej: Carrera 7 # 40-62"
+                      style={{ width: '100%', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--text)', fontSize: '1rem' }}
+                    />
+                    <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      <MapPin size={12} /> Si la dejas vacía usaremos el GPS de tu dispositivo.
+                    </p>
+                  </div>
+                </div>
+
                 <button 
                   type="submit" 
                   disabled={loading || !desc}

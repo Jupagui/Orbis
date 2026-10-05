@@ -39,7 +39,7 @@ async def seed_data():
 
         # 2. Lugares de Salud
         lugares_salud = [
-            Lugar(nombre="Fundación Santa Fe de Bogotá", categoria="clinica", lat=4.6946, lon=-74.0322, direccion="Cra. 9 #116-20", telefono="601 1234567"),
+            Lugar(nombre="Fundación Santa Fe de Bogotá", categoria="clinica", lat=4.6946, lon=-74.0322, direccion="Cra. 9 #116-20", telefono=None),
             Lugar(nombre="Hospital Universitario San Ignacio", categoria="hospital", lat=4.6288, lon=-74.0645, direccion="Cra. 7 #40-62", telefono="601 5946161"),
             Lugar(nombre="Clínica del Country", categoria="clinica", lat=4.6672, lon=-74.0558, direccion="Cra. 16 #82-57", telefono="601 5300470"),
         ]

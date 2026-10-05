@@ -1,72 +1,97 @@
 from app.orchestrator.state import BaseAgent, OrchestratorState
 from app.providers.ai import ai_provider
 from app.schemas.domain import ResultadoSalud
-from app.tools.local import evaluar_senales_alarma, consultar_lugares_propios, consultar_guias_estabilizacion
-import structlog
+from app.agents.comun import REGLA_GROUNDING, origen, filtrar_y_ubicar, completar_rutas, texto_alertas
+import app.tools.local  # noqa: F401
+import app.tools.actions  # noqa: F401
+import app.tools.geo  # noqa: F401
 import json
+import structlog
 
 log = structlog.get_logger()
 
+
 class SaludAgent(BaseAgent):
+    """Orienta (sin diagnosticar) sobre urgencia, especialidad y centros médicos cercanos."""
+
     def __init__(self):
         super().__init__("SaludAgent")
-        
-    async def _process(self, state: OrchestratorState) -> None:
+
+    async def _process(self, state: OrchestratorState):
         texto = state.context.get("texto_usuario", "")
-        ubicacion = state.context.get("ubicacion")
-        
-        # 1. Reglas deterministas (Chain of Responsibility)
-        eval_alarma = evaluar_senales_alarma(texto)
-        if eval_alarma["hay_alarma"]:
-            log.warning("Alarma detectada por reglas", alarmas=eval_alarma["alarmas"])
-            # Fallback rápido
-            
-        # 2. Consultar datos
-        lat = ubicacion.lat if ubicacion else 4.6097
-        lon = ubicacion.lon if ubicacion else -74.0817
-        
-        # Hospitales y clínicas cercanas (radio grande 10km)
-        hospitales = await consultar_lugares_propios("hospital", lat, lon, radio_m=10000)
-        clinicas = await consultar_lugares_propios("clinica", lat, lon, radio_m=10000)
-        centros = hospitales + clinicas
-        centros.sort(key=lambda x: x["distancia_m"])
-        centros = centros[:5] # Tomar los 5 más cercanos
-        
-        guias = await consultar_guias_estabilizacion()
-        
+        lat, lon = origen(state)
+
+        # 1. Reglas deterministas: no dependen del modelo
+        eval_alarma = await state.usar_herramienta(self.name, "evaluar_senales_alarma", sintomas=texto)
+
+        # 2. Datos propios: hospitales y clínicas registrados + guías de estabilización
+        hospitales = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="hospital", lat=lat, lon=lon, radio_m=10000)
+        clinicas = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="clinica", lat=lat, lon=lon, radio_m=10000)
+        centros = sorted(hospitales + clinicas, key=lambda x: x["distancia_m"])[:5]
+        for c in centros:
+            c["fuente"] = "propia"
+
+        # 3. Si los datos propios no alcanzan, se complementa con el servicio de mapas
+        if len(centros) < 3:
+            try:
+                externos = await state.usar_herramienta(self.name, "buscar_lugares_externos", categoria="hospital", lat=lat, lon=lon, radio_m=5000)
+                centros += externos[:5]
+            except Exception:
+                pass
+
+        guias = await state.usar_herramienta(self.name, "consultar_guias_estabilizacion")
+
         system_instruction = """
-        Eres el agente de Salud de ORBIS. Tu tarea es orientar al usuario en una situación de salud.
-        REGLA CRÍTICA: NO diagnosticas. Tu función es clasificar la urgencia (baja, media, alta, emergencia),
-        sugerir a qué especialidad debería acudir, identificar señales de alarma, y proveer recomendaciones
-        de estabilización basadas ESTRICTAMENTE en la información de contexto proveída.
-        
+        Eres el agente de Salud de ORBIS. Orientas al usuario en una situación de salud.
+        REGLA CRÍTICA: NO diagnosticas. Clasificas la urgencia (baja, media, alta, emergencia), sugieres
+        la especialidad, identificas señales de alarma y das recomendaciones de estabilización basadas
+        ESTRICTAMENTE en las guías proporcionadas.
         Si el nivel de urgencia es 'emergencia' o 'alta', DEBES recomendar llamar al 123 y acudir al centro más cercano.
-        Para cada centro que devuelvas, calcula una duracion_s aproximada (asume 3 min por cada 1 km = 180s/km).
-        
-        REGLA: SIEMPRE debes retornar AL MENOS 3 centros médicos sugeridos de la lista proporcionada.
-        """
-        
-        alertas_comunitarias = "\n".join(state.context.get("alertas_comunitarias", []))
-        alerta_text = f"ALERTAS EN LA ZONA:\n{alertas_comunitarias}\nConsidera advertir al usuario si es relevante." if alertas_comunitarias else ""
-        
+        """ + REGLA_GROUNDING
+
         prompt = f"""
         Síntomas reportados: '{texto}'
-        {alerta_text}
-        
+        Señales de alarma detectadas por reglas: {eval_alarma["alarmas"] or "ninguna"}
+        {texto_alertas(state)}
+
         Centros médicos cercanos disponibles (usa solo estos):
-        {json.dumps(centros, indent=2)}
-        
+        {json.dumps(centros, indent=2, ensure_ascii=False)}
+
         Guías de estabilización disponibles:
-        {json.dumps(guias, indent=2)}
+        {json.dumps(guias, indent=2, ensure_ascii=False)}
         """
-        
+
         resultado: ResultadoSalud = await ai_provider.generate_structured(
             prompt=prompt,
             response_schema=ResultadoSalud,
-            system_instruction=system_instruction
+            system_instruction=system_instruction,
+            imagen_path=state.context.get("imagen_path")
         )
-        
-        # TODO: Invocar action para guardar la recomendación aquí si se requiere persistencia pre-verificador
-        
+
+        # Las reglas mandan sobre el modelo: si hay alarma, la urgencia no puede quedar baja
+        if eval_alarma["hay_alarma"]:
+            resultado.nivel_urgencia = "emergencia"
+            for alarma in eval_alarma["alarmas"]:
+                if alarma not in resultado.senales_alarma:
+                    resultado.senales_alarma.append(alarma)
+
+        sugeridos = [c.nombre for c in resultado.centros]
+        resultado.centros = filtrar_y_ubicar(resultado.centros, centros)
+        state.context.setdefault("descartados", []).extend(n for n in sugeridos if n not in [c.nombre for c in resultado.centros])
+        await completar_rutas(state, self.name, resultado.centros)
+
+        # Acción: guardar la recomendación del centro más cercano
+        if resultado.centros:
+            elegido = min(resultado.centros, key=lambda c: c.duracion_s or c.distancia_m)
+            lugar = next((c for c in centros if c["nombre"] == elegido.nombre), {})
+            accion = await state.usar_herramienta(
+                self.name, "guardar_recomendacion",
+                caso_id=state.caso_id, lugar_id=lugar.get("id"), distancia_m=elegido.distancia_m,
+                duracion_s=elegido.duracion_s, motivo=f"{resultado.especialidad_sugerida} · urgencia {resultado.nivel_urgencia}",
+                fuente=elegido.fuente
+            )
+            state.registrar_accion("recomendacion_guardada", {"id": accion["recomendacion_id"], "lugar": elegido.nombre})
+
         state.context["salud"] = resultado
         log.info("Agente Salud completado", urgencia=resultado.nivel_urgencia)
+        return resultado

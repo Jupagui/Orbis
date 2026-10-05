@@ -11,7 +11,12 @@ class Settings(BaseSettings):
     
     # APIs
     GEMINI_API_KEY: str = Field(default="")
+    GEMINI_MODEL: str = Field(default="gemini-3.1-flash-lite")
     GEOAPIFY_API_KEY: str = Field(default="")
+
+    # Imágenes subidas por el usuario
+    UPLOADS_DIR: str = Field(default="./uploads")
+    IMAGEN_LADO_MAXIMO: int = Field(default=1600)
     
     # Logging
     LOG_LEVEL: str = Field(default="INFO")

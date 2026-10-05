@@ -1,27 +1,37 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api/v1';
+export const API_URL = 'http://localhost:8000/api/v1';
 
 export const apiClient = axios.create({
   baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
-export const reportarCaso = async (descripcion: string, tipo?: string, lat?: number, lon?: number) => {
+export interface NuevoCaso {
+  descripcion: string;
+  tipo?: string;
+  lat?: number;
+  lon?: number;
+  direccion?: string;
+  imagen?: File | null;
+}
+
+export const reportarCaso = async ({ descripcion, tipo, lat, lon, direccion, imagen }: NuevoCaso) => {
   const formData = new FormData();
   formData.append('descripcion', descripcion);
   if (tipo) formData.append('tipo', tipo);
-  
-  if (lat && lon) {
+  if (lat !== undefined && lon !== undefined) {
     formData.append('lat', lat.toString());
     formData.append('lon', lon.toString());
   }
+  if (direccion) formData.append('direccion', direccion);
+  if (imagen) formData.append('imagen', imagen);
 
-  const response = await apiClient.post('/casos', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  });
+  const response = await apiClient.post('/casos', formData);
+  return response.data;
+};
+
+export const getCasos = async () => {
+  const response = await apiClient.get('/casos');
   return response.data;
 };
 
@@ -32,5 +42,22 @@ export const getCaso = async (id: string) => {
 
 export const getTrazas = async (id: string) => {
   const response = await apiClient.get(`/casos/${id}/trazas`);
+  return response.data;
+};
+
+export const imagenCasoUrl = (id: string) => `${API_URL}/casos/${id}/imagen`;
+
+export interface MensajeChat {
+  rol: 'usuario' | 'asistente';
+  contenido: string;
+}
+
+export const getChat = async (id: string): Promise<MensajeChat[]> => {
+  const response = await apiClient.get(`/casos/${id}/chat`);
+  return response.data;
+};
+
+export const enviarPregunta = async (id: string, pregunta: string): Promise<MensajeChat> => {
+  const response = await apiClient.post(`/casos/${id}/chat`, { pregunta });
   return response.data;
 };

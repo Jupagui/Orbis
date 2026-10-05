@@ -13,8 +13,11 @@ __pycache__/
 # Archivos de base de datos
 *.db
 *.sqlite3
-orbis.db
+orbis.db*
 
 # Logs y temporales
 *.log
 .DS_Store
+
+# Imágenes subidas
+backend/uploads/

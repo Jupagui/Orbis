@@ -25,12 +25,20 @@ class UbicacionResuelta(BaseModel):
     texto: str = Field(description="Dirección o barrio legible")
     lat: float
     lon: float
-    fuente: str = Field(description="gps, exif, texto, o nominatim")
+    barrio: Optional[str] = None
+    fuente: str = Field(description="gps, geoapify, nominatim o referencia")
 
-class CentroSaludResult(BaseModel):
+# Campos comunes de un lugar recomendado. lat/lon, distancia y tiempo los completa
+# el sistema con datos reales (no el modelo).
+class LugarBase(BaseModel):
     nombre: str
-    distancia_m: int
-    duracion_s: int
+    distancia_m: int = 0
+    duracion_s: int = 0
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    ruta_verificada: bool = False
+
+class CentroSaludResult(LugarBase):
     telefono: Optional[str]
     fuente: str
 
@@ -43,13 +51,12 @@ class ResultadoSalud(BaseModel):
     centros: List[CentroSaludResult]
     aviso: str = Field(default="Esta orientación no reemplaza la valoración médica.")
 
-class LugarSaborResult(BaseModel):
-    nombre: str
+class LugarSaborResult(LugarBase):
     precio_promedio: Optional[int]
     precio_verificado: bool
     rating: Optional[float]
-    distancia_m: int
     motivo: str
+    fuente: str = "propia"
 
 class ResultadoSabor(BaseModel):
     antojo: str
@@ -58,11 +65,8 @@ class ResultadoSabor(BaseModel):
     restricciones: List[str]
     lugares: List[LugarSaborResult]
 
-class TallerResult(BaseModel):
-    nombre: str
+class TallerResult(LugarBase):
     servicios: List[str]
-    distancia_m: int
-    duracion_s: int
     telefono: Optional[str]
 
 class ResultadoTaller(BaseModel):
@@ -84,11 +88,10 @@ class ResultadoVial(BaseModel):
     duplicados_cercanos: int
     reporte_id: Optional[str] = None
 
-class ParadaResult(BaseModel):
+class ParadaResult(LugarBase):
     orden: int
-    nombre: str
     minutos_sugeridos: int
-    distancia_desde_anterior_m: int
+    descripcion: Optional[str] = None
 
 class ResultadoExplora(BaseModel):
     lugar_identificado: str
@@ -103,6 +106,12 @@ class ResultadoExplora(BaseModel):
     duracion_total_s: int
     recorrido_id: Optional[str] = None
 
+class Verificacion(BaseModel):
+    aprobado: bool
+    advertencias: List[str] = Field(default_factory=list)
+    lugares_descartados: List[str] = Field(default_factory=list)
+    fuentes: List[str] = Field(default_factory=list)
+
 class RespuestaFinal(BaseModel):
     caso_id: str
     intencion: str
@@ -110,7 +119,7 @@ class RespuestaFinal(BaseModel):
     resumen: str
     observacion_imagen: Optional[str] = None
     ubicacion: Optional[UbicacionResuelta] = None
-    calidad_informacion: CalidadInformacion
+    calidad_informacion: Optional[CalidadInformacion] = None
     
     # Solo uno de estos estará presente dependiendo del dominio
     salud: Optional[ResultadoSalud] = None
@@ -120,3 +129,4 @@ class RespuestaFinal(BaseModel):
     explora: Optional[ResultadoExplora] = None
     
     acciones: List[Any] = Field(default_factory=list)
+    verificacion: Optional[Verificacion] = None

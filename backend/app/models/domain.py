@@ -26,6 +26,17 @@ class Caso(Base):
     reporte_vial = relationship("ReporteVial", back_populates="caso", uselist=False, cascade="all, delete-orphan")
     solicitud_asistencia = relationship("SolicitudAsistencia", back_populates="caso", uselist=False, cascade="all, delete-orphan")
     recorrido = relationship("Recorrido", back_populates="caso", uselist=False, cascade="all, delete-orphan")
+    mensajes = relationship("MensajeChat", back_populates="caso", cascade="all, delete-orphan", order_by="MensajeChat.id")
+
+class MensajeChat(Base):
+    __tablename__ = "mensajes_chat"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    caso_id = Column(String, ForeignKey("casos.id", ondelete="CASCADE"), index=True)
+    rol = Column(String)  # usuario | asistente
+    contenido = Column(Text)
+    creado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    caso = relationship("Caso", back_populates="mensajes")
 
 class Traza(Base):
     __tablename__ = "trazas"

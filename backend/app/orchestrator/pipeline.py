@@ -11,7 +11,11 @@ import structlog
 
 log = structlog.get_logger()
 
+
 class Pipeline:
+    """Orquestador determinista: Triage -> (Geo -> agente de dominio) -> Verificador.
+    El orden es fijo; la condición para avanzar la decide el resultado del Triage."""
+
     def __init__(self):
         self.triage = TriageAgent()
         self.geo = GeoAgent()
@@ -23,38 +27,31 @@ class Pipeline:
             "taller": TallerAgent(),
             "explora": ExploraAgent()
         }
-        
+
     async def run(self, state: OrchestratorState):
         log.info("Iniciando pipeline", caso_id=state.caso_id)
-        
-        # 1. Triage
+
+        # 1. Triage: clasifica y evalúa la calidad de la información
         await self.triage.run(state)
-        
-        triage_res = state.context.get("triage")
-        if not triage_res:
-            log.error("Triage no produjo resultados")
-            return state
-            
-        if not triage_res.calidad_informacion.suficiente:
-            log.warning("Información insuficiente para continuar")
-            # Dejamos pasar al verificador para que le pida más info al usuario
-            
-        else:
-            # 2. Geo
-            await self.geo.run(state)
-            
-            # 3. Domain Agents
-            intencion = triage_res.intencion
-            log.info(f"Enrutando a dominio: {intencion}")
-            
-            agent = self.domain_agents.get(intencion)
+        triage_res = state.context["triage"]
+        calidad = triage_res.calidad_informacion
+
+        # 2. Ubicación (siempre, para que el caso quede geolocalizado aunque falte información)
+        await self.geo.run(state)
+
+        # 3. Agente de dominio solo si la información es suficiente y pertinente
+        if calidad.suficiente and not calidad.fuera_de_contexto:
+            agent = self.domain_agents.get(triage_res.intencion)
             if agent:
+                log.info("Enrutando a dominio", intencion=triage_res.intencion)
                 await agent.run(state)
             else:
                 log.warning("Intención no soportada o indefinida")
-            
-        # 4. Verificador
+        else:
+            log.warning("Información insuficiente o fuera de contexto; se omite el agente de dominio")
+
+        # 4. Verificador: control de calidad y respuesta final
         await self.verificador.run(state)
-        
+
         log.info("Pipeline completado", caso_id=state.caso_id)
         return state
