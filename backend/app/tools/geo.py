@@ -22,6 +22,12 @@ async def buscar_lugares_externos(categoria: str, lat: float, lon: float, radio_
 
 
 @tool_registry.register
+async def buscar_lugares_por_texto(palabras: list[str], lat: float, lon: float, radio_m: int = 10000):
+    """Busca lugares de comida por plato, nombre o tipo de cocina (ej. 'caldo', 'gallina') en un radio amplio."""
+    return await geo_provider.buscar_por_texto(palabras, lat, lon, radio_m)
+
+
+@tool_registry.register
 async def calcular_ruta(origen_lat: float, origen_lon: float, destino_lat: float, destino_lon: float, modo: str = "drive"):
     """Distancia y tiempo reales por vía entre dos puntos."""
     return await geo_provider.calcular_ruta((origen_lat, origen_lon), (destino_lat, destino_lon), modo)

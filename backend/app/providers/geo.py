@@ -1,4 +1,8 @@
 import re
+import math
+import time
+import asyncio
+import unicodedata
 import httpx
 import structlog
 from app.core.config import get_settings
@@ -23,6 +27,30 @@ CATEGORIAS_EXTERNAS = {
     "taller": ("service.vehicle", '["shop"~"car_repair|tyres"]'),
 }
 
+# Tipos de OpenStreetMap que cuentan como lugar de comida en la búsqueda por texto
+TIPOS_COMIDA_OSM = {"restaurant", "cafe", "fast_food", "food_court", "bar", "pub", "ice_cream", "bakery",
+                    "deli", "pastry", "confectionery", "butcher", "greengrocer", "marketplace"}
+
+
+def distancia_haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
+    """Distancia en línea recta (metros). Solo para ordenar; la ruta real la da calcular_ruta."""
+    r = 6371000
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return int(2 * r * math.asin(math.sqrt(a)))
+
+
+def _sin_tildes(texto: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
+
+
+def _regex_flexible(palabra: str) -> str:
+    """'gallina' -> 'g[aá]ll[ií]n[aá]' para que coincida con o sin tildes en OpenStreetMap."""
+    variantes = {"a": "[aá]", "e": "[eé]", "i": "[ií]", "o": "[oó]", "u": "[uúü]", "n": "[nñ]"}
+    limpia = re.sub(r"[^a-z0-9 ]", "", _sin_tildes(palabra.lower()))
+    return "".join(variantes.get(c, c) for c in limpia)
+
 
 class GeoProvider:
     """Servicio externo de mapas: Geoapify si hay API key; si no, OpenStreetMap (Nominatim / Overpass / OSRM)."""
@@ -30,6 +58,7 @@ class GeoProvider:
     def __init__(self):
         self.geoapify_key = settings.GEOAPIFY_API_KEY
         self.client = httpx.AsyncClient(timeout=10.0)
+        self._overpass_pausa_hasta = 0.0
 
     # ---------- Geocodificación: texto -> coordenadas ----------
     @staticmethod
@@ -145,6 +174,122 @@ class GeoProvider:
             lugares.append({"nombre": tags["name"], "direccion": tags.get("addr:street"),
                             "cocina": tags.get("cuisine"), "lat": el["lat"], "lon": el["lon"],
                             "fuente": "openstreetmap"})
+        return lugares
+
+    # ---------- Lugares por palabra clave (plato, nombre o tipo de cocina) ----------
+    async def buscar_por_texto(self, palabras: list[str], lat: float, lon: float, radio_m: int = 10000,
+                               limite: int = 40) -> list[dict]:
+        """Busca lugares de comida cuyo nombre o tipo de cocina contenga alguna de las palabras
+        (ej. 'caldo', 'gallina', 'ajiaco'). Sirve para antojos específicos que la búsqueda por
+        categoría no encuentra."""
+        palabras = [p.strip() for p in palabras if p and len(p.strip()) >= 3][:5]
+        if not palabras:
+            return []
+
+        if self.geoapify_key:
+            lugares = await self._geoapify_texto(palabras, lat, lon, radio_m, limite)
+        else:
+            resultados = await asyncio.gather(
+                self._overpass_texto(palabras, lat, lon, radio_m, limite),
+                self._nominatim_texto(palabras, lat, lon, radio_m, limite),
+                return_exceptions=True,
+            )
+            lugares = []
+            for r in resultados:
+                if isinstance(r, Exception):
+                    log.warning("Búsqueda por texto falló en un servicio", error=str(r))
+                else:
+                    lugares.extend(r)
+
+        # Quitar duplicados y ordenar por cercanía
+        vistos, unicos = set(), []
+        for l in lugares:
+            clave = _sin_tildes(l["nombre"].lower().strip())
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            l["distancia_aprox_m"] = distancia_haversine(lat, lon, l["lat"], l["lon"])
+            if l["distancia_aprox_m"] <= radio_m:
+                unicos.append(l)
+        unicos.sort(key=lambda l: l["distancia_aprox_m"])
+        return unicos[:limite]
+
+    async def _geoapify_texto(self, palabras, lat, lon, radio_m, limite) -> list[dict]:
+        lugares = []
+        for palabra in palabras:
+            resp = await self.client.get("https://api.geoapify.com/v2/places", params={
+                "categories": "catering", "name": palabra, "filter": f"circle:{lon},{lat},{radio_m}",
+                "bias": f"proximity:{lon},{lat}", "limit": limite, "apiKey": self.geoapify_key, "lang": "es"
+            })
+            resp.raise_for_status()
+            for f in resp.json().get("features", []):
+                p = f["properties"]
+                if p.get("name"):
+                    lugares.append({"nombre": p["name"], "direccion": p.get("formatted"), "lat": p["lat"],
+                                    "lon": p["lon"], "fuente": "geoapify", "coincide_busqueda": True})
+        return lugares
+
+    async def _overpass_texto(self, palabras, lat, lon, radio_m, limite) -> list[dict]:
+        patron = "|".join(_regex_flexible(p) for p in palabras)
+        tipos = "|".join(sorted(TIPOS_COMIDA_OSM))
+        # bbox es mucho más rápido que around en radios grandes; luego se filtra por distancia real
+        d_lat = radio_m / 111000
+        d_lon = radio_m / (111000 * max(math.cos(math.radians(lat)), 0.1))
+        area = f"({lat - d_lat},{lon - d_lon},{lat + d_lat},{lon + d_lon})"
+        query = (
+            f'[out:json][timeout:20];('
+            f'nwr["amenity"~"^({tipos})$"]["name"~"{patron}",i]{area};'
+            f'nwr["amenity"="restaurant"]["cuisine"~"{patron}",i]{area};'
+            f');out center {limite};'
+        )
+        if time.monotonic() < self._overpass_pausa_hasta:
+            log.info("Overpass omitido temporalmente (falló hace poco)")
+            return []
+        for servidor in OVERPASS_SERVIDORES:
+            try:
+                resp = await self.client.post(servidor, data={"data": query}, headers=NOMINATIM_HEADERS, timeout=12.0)
+                resp.raise_for_status()
+                elementos = resp.json().get("elements", [])
+                break
+            except (httpx.HTTPError, ValueError) as e:
+                log.warning("Overpass no disponible, probando otro servidor", servidor=servidor, error=str(e))
+        else:
+            self._overpass_pausa_hasta = time.monotonic() + 120
+            return []
+        lugares = []
+        for el in elementos:
+            tags = el.get("tags", {})
+            la = el.get("lat") or el.get("center", {}).get("lat")
+            lo = el.get("lon") or el.get("center", {}).get("lon")
+            if not tags.get("name") or la is None:
+                continue
+            direccion = " ".join(filter(None, [tags.get("addr:street"), tags.get("addr:housenumber")])) or None
+            lugares.append({"nombre": tags["name"], "direccion": direccion, "cocina": tags.get("cuisine"),
+                            "horario": tags.get("opening_hours"), "telefono": tags.get("phone"),
+                            "lat": la, "lon": lo, "fuente": "openstreetmap", "coincide_busqueda": True})
+        return lugares
+
+    async def _nominatim_texto(self, palabras, lat, lon, radio_m, limite) -> list[dict]:
+        d_lat = radio_m / 111000
+        d_lon = radio_m / (111000 * max(math.cos(math.radians(lat)), 0.1))
+        viewbox = f"{lon - d_lon},{lat + d_lat},{lon + d_lon},{lat - d_lat}"
+        lugares = []
+        # Nominatim pide máximo 1 consulta por segundo
+        for i, consulta in enumerate([" ".join(palabras)] + palabras[:2]):
+            if i:
+                await asyncio.sleep(1.1)
+            resp = await self.client.get("https://nominatim.openstreetmap.org/search", params={
+                "q": consulta, "format": "json", "limit": limite, "viewbox": viewbox, "bounded": 1,
+                "addressdetails": 1, "countrycodes": "co"
+            }, headers=NOMINATIM_HEADERS)
+            resp.raise_for_status()
+            for r in resp.json():
+                if r.get("type") not in TIPOS_COMIDA_OSM or not r.get("name"):
+                    continue
+                lugares.append({"nombre": r["name"], "direccion": r.get("display_name"), "lat": float(r["lat"]),
+                                "lon": float(r["lon"]), "fuente": "openstreetmap", "coincide_busqueda": True})
+            if len(lugares) >= limite:
+                break
         return lugares
 
     # ---------- Ruta real (distancia y tiempo) ----------

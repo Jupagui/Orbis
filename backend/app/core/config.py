@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     # APIs
     GEMINI_API_KEY: str = Field(default="")
     GEMINI_MODEL: str = Field(default="gemini-3.1-flash-lite")
+    # Se usan en orden si el modelo principal está saturado (503) o sin cuota (429)
+    GEMINI_MODELOS_RESPALDO: str = Field(default="gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash")
     GEOAPIFY_API_KEY: str = Field(default="")
 
     # Imágenes subidas por el usuario
