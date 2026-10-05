@@ -77,14 +77,16 @@ El orquestador (`orchestrator/pipeline.py`) es **determinista**: el orden es fij
 | **SaludAgent** | Orientar sin diagnosticar | Síntomas, imagen, ubicación | `evaluar_senales_alarma` (reglas), `consultar_lugares_propios`, `consultar_guias_estabilizacion`, `buscar_lugares_externos`, `calcular_ruta`, `guardar_recomendacion` | `ResultadoSalud` + recomendación guardada |
 | **TallerAgent** | Orientar sobre fallas del vehículo | Falla, imagen, ubicación | `evaluar_riesgo_vehicular` (reglas), `consultar_lugares_propios`, `buscar_lugares_externos`, `calcular_ruta`, `crear_solicitud_asistencia` | `ResultadoTaller` + solicitud abierta |
 | **SaborAgent** | Recomendar dónde comer | Antojo, presupuesto, ubicación | `consultar_lugares_propios`, `buscar_lugares_externos`, `calcular_ruta`, `guardar_recomendacion` | `ResultadoSabor` + recomendación guardada |
-| **ExploraAgent** | Armar recorridos turísticos | Intereses, tiempo, imagen, ubicación | `consultar_puntos_interes`, `calcular_ruta` (a pie), `guardar_recorrido` | `ResultadoExplora` + recorrido guardado |
-| **VerificadorAgent** | Control de calidad **sin LLM** antes de responder | Salidas de todos los agentes y trazas | — | `Verificacion`: aprobado, advertencias, lugares descartados, fuentes usadas |
+| **ExploraAgent** | Reconocer el lugar y armar el recorrido | Intereses, tiempo, imagen, ubicación | `consultar_puntos_interes`, `buscar_lugar_por_nombre`, `calcular_ruta` (a pie, o en carro si el tramo supera 2,5 km), `guardar_recorrido` | `ResultadoExplora` + recorrido guardado |
+| **VerificadorAgent** | Control de calidad y **priorización** **sin LLM** antes de responder | Salidas de todos los agentes y trazas | — | `Verificacion` (aprobado, advertencias, lugares descartados, fuentes usadas) y `prioridad` |
 | **ChatAgent** | Responder preguntas de seguimiento | Resultado del caso + salidas de herramientas + historial | Gemini | Respuesta en texto, guardada en `mensajes_chat` |
 
 **Separación real de responsabilidades:**
 - Las **reglas deterministas** (alarmas médicas, riesgo vehicular) **mandan sobre el modelo**: si detectan una alarma, la urgencia no puede quedar baja.
 - El modelo **no calcula distancias ni tiempos**: los calcula el servicio de mapas (`calcular_ruta`).
 - El Verificador **descarta** cualquier lugar que el modelo sugiera y que no esté en los datos consultados, avisa si la ubicación no fue confirmada, si una herramienta falló o si falta información, y garantiza el mensaje del 123 en urgencias.
+- **Priorización:** el Verificador asigna la prioridad del caso con reglas fijas a partir de la urgencia o severidad (emergencia → **crítica**; taller con urgencia alta que no puede conducir → **crítica**; alta, media y baja según el agente; Sabor y Explora → baja). Se muestra en el caso y el Historial puede ordenarse por prioridad.
+- Si Explora reconoce un lugar específico (por la foto o el texto) que no está en los datos propios, lo busca por nombre en el mapa (`buscar_lugar_por_nombre`). Si no lo encuentra, no muestra ninguna dirección.
 
 ---
 
@@ -122,7 +124,7 @@ Todas las herramientas se registran en `tools/registry.py` y los agentes las inv
 | Tipo | Herramientas |
 |---|---|
 | Datos propios | `consultar_lugares_propios`, `consultar_guias_estabilizacion`, `consultar_puntos_interes`, `consultar_reportes_cercanos`, `consultar_especialidades` |
-| Servicio de mapas | `geocodificar_direccion`, `identificar_direccion`, `buscar_lugares_externos`, `calcular_ruta` |
+| Servicio de mapas | `geocodificar_direccion`, `identificar_direccion`, `buscar_lugares_externos`, `buscar_lugar_por_nombre`, `calcular_ruta` |
 | Reglas | `evaluar_senales_alarma`, `evaluar_riesgo_vehicular` |
 | **Acciones** (cambian el sistema) | `crear_reporte_vial`, `crear_solicitud_asistencia`, `guardar_recorrido`, `guardar_recomendacion` |
 
@@ -138,7 +140,7 @@ Las acciones ejecutadas aparecen en la interfaz en "Acciones realizadas" con su 
 
 ## 8. Persistencia y trazabilidad
 
-- `GET /api/v1/casos`: historial de casos (pantalla **Historial**).
+- `GET /api/v1/casos?orden=recientes|prioridad`: historial de casos (pantalla **Historial**), por fecha o con los más urgentes primero.
 - `GET /api/v1/casos/{id}`: caso, resultado estructurado y acciones.
 - `GET /api/v1/casos/{id}/trazas`: cada agente y herramienta en orden, con entrada, salida, duración y estado. La interfaz lo muestra en "¿Cómo se obtuvo este resultado?".
 - `GET /api/v1/casos/{id}/imagen` y `GET /api/v1/casos/{id}/chat`.

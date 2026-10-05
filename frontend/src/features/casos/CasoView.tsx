@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getCaso, getTrazas, imagenCasoUrl } from '../../services/api';
+import { getCaso, getTrazas, imagenCasoUrl, PRIORIDADES } from '../../services/api';
 import { Loader2, CheckCircle2, AlertTriangle, ArrowLeft, Navigation, Activity, ShieldAlert, Wrench, Utensils, Map as MapIcon, MapPin, Image as ImageIcon, Zap, Info } from 'lucide-react';
 import ChatCaso from './ChatCaso';
 import Trazabilidad from './Trazabilidad';
@@ -98,6 +98,11 @@ export default function CasoView() {
           <h1 style={{ margin: 0, color: 'var(--primary)', fontSize: '1.2rem' }}>Análisis del Caso</h1>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {caso.prioridad && caso.prioridad !== 'normal' && (
+            <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', border: `1px solid ${(PRIORIDADES[caso.prioridad] || PRIORIDADES.normal).color}`, color: (PRIORIDADES[caso.prioridad] || PRIORIDADES.normal).color, textTransform: 'uppercase' }}>
+              Prioridad {(PRIORIDADES[caso.prioridad] || PRIORIDADES.normal).texto}
+            </span>
+          )}
           <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', backgroundColor: 'var(--surface-2)', border: '1px solid var(--border)', textTransform: 'uppercase' }}>
             {caso.estado.replace('_', ' ')}
           </span>

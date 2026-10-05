@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, Form, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from pydantic import BaseModel, Field
 from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -17,6 +17,7 @@ from app.schemas.api import CasoResponse
 from app.orchestrator.state import OrchestratorState, a_json
 from app.orchestrator.pipeline import Pipeline
 from app.agents import chat as chat_agent
+from app.agents.verificador import ORDEN_PRIORIDAD
 
 log = structlog.get_logger()
 router = APIRouter()
@@ -50,6 +51,7 @@ async def process_caso_background(caso_id: str, context: dict):
                 caso.estado = "completado" if calidad and calidad.suficiente and not calidad.fuera_de_contexto else "requiere_info"
                 caso.resultado_json = respuesta.model_dump_json()
                 caso.tipo = respuesta.intencion
+                caso.prioridad = respuesta.prioridad
                 if respuesta.ubicacion and respuesta.ubicacion.fuente != "referencia":
                     caso.lat, caso.lon = respuesta.ubicacion.lat, respuesta.ubicacion.lon
                     caso.direccion = respuesta.ubicacion.texto
@@ -83,11 +85,17 @@ def guardar_imagen(contenido: bytes, caso_id: str) -> str:
 
 
 @router.get("/casos")
-async def listar_casos(db: AsyncSession = Depends(get_db_session)):
-    """Historial de casos procesados (persistencia)."""
-    result = await db.execute(select(Caso).order_by(Caso.creado_en.desc()).limit(100))
+async def listar_casos(orden: str = "recientes", db: AsyncSession = Depends(get_db_session)):
+    """Historial de casos procesados (persistencia). orden=prioridad pone primero los más urgentes."""
+    query = select(Caso)
+    if orden == "prioridad":
+        rango = case(*[(Caso.prioridad == p, n) for p, n in ORDEN_PRIORIDAD.items()], else_=len(ORDEN_PRIORIDAD))
+        query = query.order_by(rango, Caso.creado_en.desc())
+    else:
+        query = query.order_by(Caso.creado_en.desc())
+    result = await db.execute(query.limit(100))
     return [
-        {"id": c.id, "tipo": c.tipo, "estado": c.estado, "descripcion": c.descripcion,
+        {"id": c.id, "tipo": c.tipo, "estado": c.estado, "prioridad": c.prioridad, "descripcion": c.descripcion,
          "direccion": c.direccion, "tiene_imagen": bool(c.imagen_path), "creado_en": c.creado_en}
         for c in result.scalars().all()
     ]
@@ -163,6 +171,7 @@ async def get_caso(caso_id: str, db: AsyncSession = Depends(get_db_session)):
         "id": caso.id,
         "estado": caso.estado,
         "tipo": caso.tipo,
+        "prioridad": caso.prioridad,
         "descripcion": caso.descripcion,
         "direccion": caso.direccion,
         "tiene_imagen": bool(caso.imagen_path),

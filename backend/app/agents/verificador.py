@@ -6,6 +6,27 @@ log = structlog.get_logger()
 
 DOMINIOS = {"vial": "vial", "salud": "salud", "comida": "sabor", "taller": "taller", "explora": "explora"}
 
+# Escala común para ordenar la atención de los casos (menor número = se atiende primero)
+ORDEN_PRIORIDAD = {"critica": 0, "alta": 1, "media": 2, "baja": 3, "normal": 4}
+EQUIVALENCIAS = {"emergencia": "critica", "crítica": "critica", "critica": "critica", "alta": "alta",
+                 "media": "media", "moderada": "media", "baja": "baja", "leve": "baja"}
+
+
+def calcular_prioridad(clave: str | None, dominio) -> str:
+    """Prioridad del caso según la urgencia o severidad que produjo el agente de dominio.
+    Es determinista: la misma entrada siempre da la misma prioridad."""
+    if dominio is None:
+        return "normal"
+    if clave == "salud":
+        nivel = dominio.nivel_urgencia
+    elif clave == "taller":
+        nivel = "critica" if not dominio.puede_conducir and dominio.urgencia == "alta" else dominio.urgencia
+    elif clave == "vial":
+        nivel = dominio.severidad
+    else:
+        return "baja"  # Sabor y Explora no son urgentes
+    return EQUIVALENCIAS.get((nivel or "").strip().lower(), "media")
+
 
 class VerificadorAgent(BaseAgent):
     """Control de calidad determinista: no usa el LLM. Revisa lo que produjeron los demás agentes
@@ -96,6 +117,7 @@ class VerificadorAgent(BaseAgent):
             calidad_informacion=calidad,
             acciones=state.acciones,
             verificacion=verificacion,
+            prioridad=calcular_prioridad(clave, dominio),
         )
         if clave and dominio is not None:
             setattr(respuesta, clave, dominio)

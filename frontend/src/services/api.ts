@@ -30,9 +30,18 @@ export const reportarCaso = async ({ descripcion, tipo, lat, lon, direccion, ima
   return response.data;
 };
 
-export const getCasos = async () => {
-  const response = await apiClient.get('/casos');
+export const getCasos = async (orden: 'recientes' | 'prioridad' = 'recientes') => {
+  const response = await apiClient.get('/casos', { params: { orden } });
   return response.data;
+};
+
+// Colores y textos de la prioridad que asigna el Verificador
+export const PRIORIDADES: Record<string, { texto: string; color: string }> = {
+  critica: { texto: 'Crítica', color: 'var(--danger)' },
+  alta: { texto: 'Alta', color: 'var(--warning)' },
+  media: { texto: 'Media', color: 'var(--info)' },
+  baja: { texto: 'Baja', color: 'var(--success)' },
+  normal: { texto: 'Sin prioridad', color: 'var(--text-muted)' },
 };
 
 export const getCaso = async (id: string) => {

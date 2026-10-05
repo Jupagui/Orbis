@@ -133,3 +133,4 @@ class RespuestaFinal(BaseModel):
     
     acciones: List[Any] = Field(default_factory=list)
     verificacion: Optional[Verificacion] = None
+    prioridad: str = "normal"  # critica | alta | media | baja | normal (la asigna el Verificador)
