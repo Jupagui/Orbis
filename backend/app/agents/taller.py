@@ -1,7 +1,7 @@
 from app.orchestrator.state import BaseAgent, OrchestratorState
 from app.providers.ai import ai_provider
 from app.schemas.domain import ResultadoTaller
-from app.agents.comun import REGLA_GROUNDING, origen, filtrar_y_ubicar, completar_rutas, texto_alertas
+from app.agents.comun import REGLA_GROUNDING, origen, filtrar_y_ubicar, completar_rutas, texto_alertas, pedir_reintento
 import app.tools.local  # noqa: F401
 import app.tools.actions  # noqa: F401
 import app.tools.geo  # noqa: F401
@@ -24,18 +24,24 @@ class TallerAgent(BaseAgent):
         # 1. Reglas deterministas de riesgo
         eval_riesgo = await state.usar_herramienta(self.name, "evaluar_riesgo_vehicular", falla=texto)
 
+        # El orquestador sube este factor si un primer intento no encontró lugares (ciclo de reintento)
+        factor = state.context.get("factor_radio", 1)
+
         # 2. Datos propios: talleres y montallantas
-        talleres = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="taller", lat=lat, lon=lon, radio_m=15000)
-        montallantas = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="montallantas", lat=lat, lon=lon, radio_m=15000)
+        talleres = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="taller", lat=lat, lon=lon, radio_m=15000 * factor)
+        montallantas = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="montallantas", lat=lat, lon=lon, radio_m=15000 * factor)
         lugares = sorted(talleres + montallantas, key=lambda x: x["distancia_m"])[:5]
         for l in lugares:
             l["fuente"] = "propia"
 
         if len(lugares) < 3:
             try:
-                lugares += (await state.usar_herramienta(self.name, "buscar_lugares_externos", categoria="taller", lat=lat, lon=lon, radio_m=5000))[:5]
+                lugares += (await state.usar_herramienta(self.name, "buscar_lugares_externos", categoria="taller", lat=lat, lon=lon, radio_m=5000 * factor))[:5]
             except Exception:
                 pass
+        # Pocos talleres: el orquestador reintenta con más radio antes de llamar al modelo
+        if pedir_reintento(state, len(lugares)):
+            return {"reintento": f"solo {len(lugares)} talleres en {15 * factor} km"}
 
         system_instruction = """
         Eres el agente de Taller de ORBIS. Orientas sobre problemas mecánicos de vehículos.
@@ -72,14 +78,17 @@ class TallerAgent(BaseAgent):
         state.context.setdefault("descartados", []).extend(n for n in sugeridos if n not in [t.nombre for t in resultado.talleres])
         await completar_rutas(state, self.name, resultado.talleres)
 
-        # Acción: crear solicitud de asistencia
-        accion = await state.usar_herramienta(
-            self.name, "crear_solicitud_asistencia",
-            caso_id=state.caso_id, tipo_vehiculo=resultado.tipo_vehiculo, falla_probable=resultado.falla_probable,
-            urgencia=resultado.urgencia, puede_conducir=resultado.puede_conducir
-        )
-        resultado.solicitud_id = accion["solicitud_id"]
-        state.registrar_accion("solicitud_asistencia_creada", {"id": accion["solicitud_id"], "estado": accion["estado"]})
+        # Acción: crear solicitud de asistencia (una sola por caso, aunque el orquestador reintente)
+        if state.context.get("solicitud_id"):
+            resultado.solicitud_id = state.context["solicitud_id"]
+        else:
+            accion = await state.usar_herramienta(
+                self.name, "crear_solicitud_asistencia",
+                caso_id=state.caso_id, tipo_vehiculo=resultado.tipo_vehiculo, falla_probable=resultado.falla_probable,
+                urgencia=resultado.urgencia, puede_conducir=resultado.puede_conducir
+            )
+            resultado.solicitud_id = state.context["solicitud_id"] = accion["solicitud_id"]
+            state.registrar_accion("solicitud_asistencia_creada", {"id": accion["solicitud_id"], "estado": accion["estado"]})
 
         state.context["taller"] = resultado
         log.info("Agente Taller completado", falla=resultado.falla_probable)

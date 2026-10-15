@@ -32,7 +32,7 @@ ORBIS **no diagnostica** enfermedades ni reemplaza a los servicios de emergencia
 flowchart LR
     U[Usuario] -->|texto + foto + GPS/dirección| FE[Frontend React + Vite]
     FE -->|REST /api/v1| BE[Backend FastAPI]
-    BE --> ORQ{{Orquestador<br/>Pipeline}}
+    BE --> ORQ{{Orquestador<br/>LangGraph}}
     ORQ --> T[TriageAgent]
     ORQ --> G[GeoAgent]
     ORQ --> D[Agente de dominio<br/>Vial · Salud · Taller · Sabor · Explora]
@@ -48,26 +48,51 @@ flowchart LR
 | Componente | Tecnología | Ubicación |
 |---|---|---|
 | Interfaz web | React 19 + TypeScript + Vite, TanStack Query, React Router, Leaflet | `frontend/` |
-| Backend | FastAPI (async), Pydantic v2, SQLAlchemy 2 (async) | `backend/app/` |
+| Backend | FastAPI (async), Pydantic v2, SQLAlchemy 2 (async), **LangGraph** (orquestación) | `backend/app/` |
 | Modelo de IA | Google Gemini vía `google-genai` | `backend/app/providers/ai.py` |
 | Datos propios | SQLite: lugares, especialidades, guías de estabilización, puntos de interés, reportes | `backend/app/models/domain.py`, `backend/app/seed/` |
 | Servicio de mapas | **Geoapify** (geocodificación, lugares, rutas). Si no hay clave: **OpenStreetMap** (Nominatim, Overpass, OSRM de FOSSGIS) | `backend/app/providers/geo.py` |
 | Herramientas | Registro central de funciones que usan los agentes | `backend/app/tools/` |
-| Agentes y orquestación | `Pipeline` determinista + agentes con responsabilidades separadas | `backend/app/agents/`, `backend/app/orchestrator/` |
+| Agentes y orquestación | **LangGraph** (grafo con nodos en paralelo, aristas condicionales y un ciclo de reintento) + agentes con responsabilidades separadas | `backend/app/agents/`, `backend/app/orchestrator/pipeline.py` |
 | Persistencia y trazas | Tablas `casos`, `trazas`, `mensajes_chat`, `reportes_viales`, `solicitudes_asistencia`, `recorridos`, `recomendaciones` | `backend/app/models/domain.py` |
 
 ### Flujo de un caso
 
 1. El frontend envía `POST /api/v1/casos` (multipart: descripción, imagen opcional, GPS o dirección). La imagen se corrige de orientación, se reduce a 1600 px y se guarda en `backend/uploads/`.
 2. El caso se procesa en segundo plano y el frontend consulta su estado cada 2 s.
-3. **TriageAgent** → **GeoAgent** → **agente de dominio** (solo si la información es suficiente) → **VerificadorAgent**.
+3. **TriageAgent** y **GeoAgent** (en paralelo) → **agente de dominio** (solo si la información es suficiente y no hay contradicciones; puede reintentarse una vez con más radio) → **VerificadorAgent**.
 4. Se guardan el resultado, las acciones y la traza completa. El usuario puede abrir el chat del caso.
 
 ---
 
 ## 3. Agentes y orquestación
 
-El orquestador (`orchestrator/pipeline.py`) es **determinista**: el orden es fijo y la **condición** para ejecutar el agente de dominio la decide el Triage (`calidad_informacion.suficiente` y `fuera_de_contexto`). La intención (`vial`, `salud`, `comida`, `taller`, `explora`) decide **qué** agente de dominio participa.
+El orquestador (`orchestrator/pipeline.py`) está construido con **LangGraph**: cada agente es un **nodo** del grafo y el orden son **aristas**. Usa nodos en **paralelo** (Triage y Geo), una **arista condicional** que elige el agente especializado según la intención y la calidad de la información, y un **ciclo** de reintento con más radio cuando un agente encuentra muy pocos lugares.
+
+```mermaid
+flowchart TD
+    S([inicio]) --> T[triage<br/>TriageAgent]
+    S --> G[geo<br/>GeoAgent]
+    T & G --> D{decidir}
+    D -. "intención vial" .-> V[vial<br/>VialAgent]
+    D -. "intención salud" .-> SA[salud<br/>SaludAgent]
+    D -. "intención comida" .-> SB[sabor<br/>SaborAgent]
+    D -. "intención taller" .-> TA[taller<br/>TallerAgent]
+    D -. "intención explora" .-> E[explora<br/>ExploraAgent]
+    D -. "información insuficiente,<br/>contradictoria o fuera de contexto" .-> VE
+    SA -. "menos de 3 candidatos:<br/>reintento con radio ×4 (1 vez)" .-> SA
+    TA -. "reintento" .-> TA
+    E -. "reintento" .-> E
+    V & SA & SB & TA & E --> VE[verificador<br/>VerificadorAgent]
+    VE --> F([fin])
+```
+
+- **Paralelo:** Triage y Geo arrancan al mismo tiempo (Geo no necesita nada del Triage) y se unen en el nodo `decidir`.
+- **Arista condicional** (`decidir_ruta`): si hay contradicciones, falta información o la solicitud está fuera de contexto, el caso va directo al Verificador y no se ejecuta ninguna acción; si no, la intención elige el agente.
+- **Ciclo de reintento** (`revisar_resultado`): Salud, Taller y Explora revisan cuántos candidatos encontraron sus herramientas **antes** de llamar al modelo. Si son menos de 3, piden al orquestador volver a ejecutarlos **una sola vez** con el radio ×4 (sin gastar una llamada a Gemini ni guardar acciones con un resultado pobre). Sabor no lo usa porque ya amplía su radio por dentro (2 → 8 → 25 km).
+- Cada decisión del orquestador queda en la traza como `Orquestador (LangGraph)`.
+
+El diagrama que genera LangGraph automáticamente está en [`Documentacion/grafo_orquestador.md`](Documentacion/grafo_orquestador.md) y en `GET /api/v1/orquestador/grafo`.
 
 | Agente | Responsabilidad | Recibe | Herramientas | Produce |
 |---|---|---|---|---|
@@ -224,7 +249,8 @@ Ejecutar `iniciar_sistema.bat` desde la raíz del proyecto, después de crear `b
 3. **Vial + foto:** hueco con foto real → reporte creado y visible en el Tablero de Calor.
 4. **Contradicción:** "hueco en la calle" + foto que no corresponde → `requiere_info`, sin acción.
 5. **Explora:** "3 horas en La Candelaria, me gustan los museos" → recorrido con rutas a pie y mapa.
-6. Abrir **"¿Cómo se obtuvo este resultado?"** y el **Historial**.
+6. **Ciclo de LangGraph:** desde Suba (`4.7569, -74.1147`), "Tengo 2 horas libres, recomiéndame un recorrido turístico" → en la traza: Explora no encuentra puntos en 5 km, el orquestador decide "reintentar con radio ×4" y Explora arma el recorrido en 20 km.
+7. Abrir **"¿Cómo se obtuvo este resultado?"** y el **Historial**.
 
 ---
 

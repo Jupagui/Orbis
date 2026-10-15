@@ -63,7 +63,8 @@ class VerificadorAgent(BaseAgent):
         # 3. Resultado del agente de dominio
         clave = DOMINIOS.get(intencion)
         dominio = state.context.get(clave) if clave else None
-        if clave and calidad and calidad.suficiente and not calidad.fuera_de_contexto and dominio is None:
+        if (clave and calidad and calidad.suficiente and not calidad.fuera_de_contexto
+                and not calidad.contradicciones and dominio is None):
             advertencias.append("El agente especializado no produjo resultado.")
 
         lugares = []

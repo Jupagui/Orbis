@@ -48,7 +48,9 @@ async def process_caso_background(caso_id: str, context: dict):
         async with AsyncSessionLocal() as sess:
             caso = await sess.get(Caso, caso_id)
             if caso:
-                caso.estado = "completado" if calidad and calidad.suficiente and not calidad.fuera_de_contexto else "requiere_info"
+                completo = (calidad and calidad.suficiente and not calidad.fuera_de_contexto
+                            and not calidad.contradicciones)
+                caso.estado = "completado" if completo else "requiere_info"
                 caso.resultado_json = respuesta.model_dump_json()
                 caso.tipo = respuesta.intencion
                 caso.prioridad = respuesta.prioridad

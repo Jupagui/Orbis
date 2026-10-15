@@ -1,7 +1,7 @@
 from app.orchestrator.state import BaseAgent, OrchestratorState
 from app.providers.ai import ai_provider
 from app.schemas.domain import ResultadoExplora, ParadaResult
-from app.agents.comun import origen, filtrar_y_ubicar, texto_alertas
+from app.agents.comun import origen, filtrar_y_ubicar, texto_alertas, pedir_reintento
 from app.tools.local import haversine
 import app.tools.local  # noqa: F401
 import app.tools.actions  # noqa: F401
@@ -24,7 +24,12 @@ class ExploraAgent(BaseAgent):
         texto = state.context.get("texto_usuario", "")
         lat, lon = origen(state)
 
-        puntos = await state.usar_herramienta(self.name, "consultar_puntos_interes", lat=lat, lon=lon, radio_m=5000)
+        # El orquestador sube este factor si un primer intento no encontró lugares (ciclo de reintento)
+        factor = state.context.get("factor_radio", 1)
+        puntos = await state.usar_herramienta(self.name, "consultar_puntos_interes", lat=lat, lon=lon, radio_m=5000 * factor)
+        # Pocos puntos de interés: el orquestador reintenta con más radio antes de llamar al modelo
+        if pedir_reintento(state, len(puntos)):
+            return {"reintento": f"solo {len(puntos)} puntos de interés en {5 * factor} km"}
 
         system_instruction = """
         Eres el agente Explora de ORBIS. Diseñas recorridos turísticos y peatonales en Bogotá.

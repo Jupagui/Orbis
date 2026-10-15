@@ -39,7 +39,7 @@
 | 3. Datos propios + geo | SQLite con lugares, especialidades, guías, puntos de interés y reportes. **Geoapify** (geocodificación, inversa, lugares, rutas) con respaldo **OpenStreetMap** (Nominatim, Overpass, OSRM de FOSSGIS) |
 | 4. Herramientas y acciones | 17 herramientas en un registro central; 4 acciones reales que escriben en la BD |
 | 5. Chat contextual | Chat por caso con el resultado + salidas reales de las herramientas; dice explícitamente cuando no tiene un dato verificado |
-| 6. Agentes y orquestación | 9 agentes con responsabilidades separadas + orquestador determinista (`Pipeline`) |
+| 6. Agentes y orquestación | 9 agentes con responsabilidades separadas + orquestador construido con **LangGraph** (nodos en paralelo, arista condicional y ciclo de reintento) |
 | 7. Persistencia y trazabilidad | Tablas `casos`, `trazas`, `mensajes_chat` y de acciones. Vista "¿Cómo se obtuvo este resultado?" e Historial |
 
 ---
@@ -49,6 +49,7 @@
 | Capa | Tecnología | Justificación |
 |---|---|---|
 | Backend | **Python 3.11+ · FastAPI** (async) + Uvicorn | Continuidad con el proyecto base; async para la E/S de IA y mapas |
+| Orquestación | **LangGraph** (`StateGraph`) | El flujo de agentes se declara como grafo: nodos en paralelo, aristas condicionales y un ciclo; genera su propio diagrama |
 | Validación / config | Pydantic v2 + `pydantic-settings` (`.env`) | Esquemas de respuesta estructurada y configuración por entorno |
 | BD | **SQLAlchemy 2.0 async + aiosqlite + SQLite** (WAL, `foreign_keys=ON`) | Sin servidor de BD; migrable a PostgreSQL cambiando `DATABASE_URL` |
 | IA | **Google GenAI SDK** · `gemini-3.1-flash-lite` (configurable con `GEMINI_MODEL`) + modelos de respaldo (`GEMINI_MODELOS_RESPALDO`) | Multimodal, salida JSON con esquema, baja latencia, cuota gratuita; si el modelo está saturado (503/429) se prueba el siguiente |
@@ -70,7 +71,7 @@
 flowchart LR
   U["Usuario (navegador)"] --> FE["Frontend React + Vite"]
   FE -->|"REST /api/v1 (sondeo cada 2 s)"| API["FastAPI"]
-  API -->|BackgroundTasks| ORQ["Orquestador (Pipeline)"]
+  API -->|BackgroundTasks| ORQ["Orquestador (LangGraph)"]
   ORQ --> AG["Agentes"]
   AG -->|"state.usar_herramienta()"| TL["Registro de herramientas"]
   TL --> DB[("SQLite")]
@@ -87,7 +88,7 @@ flowchart LR
 
 ```
 api/v1/casos.py      → endpoints (casos, imagen, trazas, chat)
-orchestrator/        → pipeline.py (orden y condiciones) · state.py (contexto, trazas, acciones, usar_herramienta)
+orchestrator/        → pipeline.py (grafo de LangGraph: nodos y arista condicional) · state.py (contexto, trazas, acciones, usar_herramienta)
 agents/              → triage, geo, via, salud, sabor, taller, explora, verificador, chat · comun.py (utilidades)
 tools/               → registry.py · local.py (datos propios y reglas) · geo.py (mapas) · actions.py (acciones)
 providers/           → ai.py (Gemini) · geo.py (Geoapify / OpenStreetMap)
@@ -99,7 +100,7 @@ seed/                → datos propios de Bogotá (se cargan solos al iniciar)
 
 | Patrón | Dónde | Beneficio |
 |---|---|---|
-| **Pipeline** | `orchestrator/pipeline.py` | Orden y condiciones explícitas, auditables, sin depender de un prompt |
+| **Grafo de estados (LangGraph)** | `orchestrator/pipeline.py` | Orden y condiciones explícitas como nodos y aristas, auditables, sin depender de un prompt |
 | **Strategy** | Agentes de dominio, elegidos por `intencion` | Agregar un dominio sin cambiar el orquestador |
 | **Registry** | `tools/registry.py` | Todas las herramientas se invocan por nombre y quedan trazadas |
 | **Adapter + fallback** | `GeoProvider` (Geoapify ↔ OpenStreetMap) | Cambiar de proveedor sin tocar los agentes |
@@ -124,27 +125,33 @@ seed/                → datos propios de Bogotá (se cargan solos al iniciar)
 | **VerificadorAgent** | Control de calidad **sin LLM** y respuesta final | Salidas de todos los agentes + trazas | — | `RespuestaFinal` con `verificacion` (aprobado, advertencias, descartados, fuentes) y **`prioridad`** |
 | **ChatAgent** | Preguntas de seguimiento | Resultado + salidas de herramientas + historial | Gemini | Respuesta en texto citando la fuente |
 
-### Flujo del orquestador
+### Flujo del orquestador (grafo de LangGraph)
 
 ```mermaid
-stateDiagram-v2
-  [*] --> Triage
-  Triage --> Geo
-  Geo --> Dominio: información suficiente y pertinente
-  Geo --> Verificador: insuficiente, contradictoria o fuera de contexto
-  state Dominio {
-    [*] --> Vial: intencion = vial
-    [*] --> Salud: intencion = salud
-    [*] --> Sabor: intencion = comida
-    [*] --> Taller: intencion = taller
-    [*] --> Explora: intencion = explora
-  }
-  Dominio --> Verificador
-  Verificador --> Persistir: completado o requiere_info
-  Persistir --> [*]
+flowchart TD
+    S([inicio]) --> T[triage<br/>TriageAgent]
+    S --> G[geo<br/>GeoAgent]
+    T & G --> D{decidir}
+    D -. "intención vial" .-> V[vial<br/>VialAgent]
+    D -. "intención salud" .-> SA[salud<br/>SaludAgent]
+    D -. "intención comida" .-> SB[sabor<br/>SaborAgent]
+    D -. "intención taller" .-> TA[taller<br/>TallerAgent]
+    D -. "intención explora" .-> E[explora<br/>ExploraAgent]
+    D -. "información insuficiente,<br/>contradictoria o fuera de contexto" .-> VE
+    SA -. "menos de 3 candidatos:<br/>reintento con radio ×4 (1 vez)" .-> SA
+    TA -. "reintento" .-> TA
+    E -. "reintento" .-> E
+    V & SA & SB & TA & E --> VE[verificador<br/>VerificadorAgent]
+    VE --> F([fin])
 ```
 
-- El orquestador es **código**, no un prompt. Geo se ejecuta siempre para que el caso quede geolocalizado.
+- **Paralelo:** Triage y Geo arrancan al mismo tiempo (Geo no necesita nada del Triage) y se unen en el nodo `decidir`.
+- **Arista condicional** (`decidir_ruta`): si hay contradicciones, falta información o la solicitud está fuera de contexto, el caso va directo al Verificador y no se ejecuta ninguna acción; si no, la intención elige el agente.
+- **Ciclo de reintento** (`revisar_resultado`): Salud, Taller y Explora revisan cuántos candidatos encontraron sus herramientas **antes** de llamar al modelo. Si son menos de 3, piden al orquestador volver a ejecutarlos **una sola vez** con el radio ×4 (sin gastar una llamada a Gemini ni guardar acciones con un resultado pobre). Sabor no lo usa porque ya amplía su radio por dentro (2 → 8 → 25 km).
+- Cada decisión del orquestador queda en la traza como `Orquestador (LangGraph)`.
+
+- El orquestador es un **grafo de LangGraph** definido en código, no un prompt: el modelo no decide el flujo. Geo se ejecuta siempre para que el caso quede geolocalizado.
+- La arista condicional (`decidir_ruta`) queda registrada en la traza como `Orquestador (LangGraph)`. Diagrama generado: `Documentacion/grafo_orquestador.md`.
 - **Separación real de responsabilidades:** el modelo clasifica, interpreta y redacta; las reglas deciden la seguridad; el servicio de mapas calcula distancias y tiempos; el Verificador descarta lugares que no estén en los datos consultados.
 - **Priorización (Verificador):** `emergencia` o `critica` → **crítica**; Taller con urgencia alta y sin poder conducir → **crítica**; `alta` → alta; `media` → media; `baja` → baja; Sabor y Explora → baja; casos sin resultado de dominio → normal. El Historial puede ordenarse por prioridad.
 
@@ -372,6 +379,7 @@ Mientras el caso se procesa, la vista consulta el estado cada 2 s y muestra "Los
 
 | Planeado | Implementado | Razón |
 |---|---|---|
+| Orquestador como máquina de estados escrita a mano | Grafo de **LangGraph** (`StateGraph`) que reutiliza los mismos agentes | Recomendado en clase; el flujo queda declarado como grafo y genera su propio diagrama |
 | Progreso en vivo por **SSE** (`/casos/{id}/eventos`) | Sondeo cada 2 s + traza completa al terminar | Menos complejidad; el análisis dura entre 5 y 30 s y la traza muestra el detalle de cada paso |
 | `gemini-2.5-flash` + `flash-lite` | `gemini-3.1-flash-lite`, configurable, con respaldo `gemini-3.5-flash-lite` → `gemini-flash-lite-latest` → `gemini-3.5-flash` | La familia 2.5 y `gemini-2.0-flash` responden 404 ("no longer available to new users"); los respaldos se verificaron uno por uno con imagen + JSON |
 | Tabla `acciones` | Las acciones viven en sus tablas (`reportes_viales`, `solicitudes_asistencia`, `recorridos`, `recomendaciones`), en `resultado_json.acciones` y en la traza | Evita duplicar información |

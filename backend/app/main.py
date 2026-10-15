@@ -51,3 +51,10 @@ app.add_middleware(
 @app.get("/api/v1/health")
 async def health_check():
     return {"status": "ok", "project": settings.PROJECT_NAME, "version": settings.VERSION}
+
+
+@app.get("/api/v1/orquestador/grafo")
+async def grafo_orquestador():
+    """Diagrama Mermaid del grafo de agentes, generado por LangGraph."""
+    from app.orchestrator.pipeline import Pipeline
+    return {"motor": "LangGraph", "mermaid": Pipeline().diagrama_mermaid()}

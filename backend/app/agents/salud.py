@@ -1,7 +1,7 @@
 from app.orchestrator.state import BaseAgent, OrchestratorState
 from app.providers.ai import ai_provider
 from app.schemas.domain import ResultadoSalud
-from app.agents.comun import REGLA_GROUNDING, origen, filtrar_y_ubicar, completar_rutas, texto_alertas
+from app.agents.comun import REGLA_GROUNDING, origen, filtrar_y_ubicar, completar_rutas, texto_alertas, pedir_reintento
 import app.tools.local  # noqa: F401
 import app.tools.actions  # noqa: F401
 import app.tools.geo  # noqa: F401
@@ -24,9 +24,12 @@ class SaludAgent(BaseAgent):
         # 1. Reglas deterministas: no dependen del modelo
         eval_alarma = await state.usar_herramienta(self.name, "evaluar_senales_alarma", sintomas=texto)
 
+        # El orquestador sube este factor si un primer intento no encontró lugares (ciclo de reintento)
+        factor = state.context.get("factor_radio", 1)
+
         # 2. Datos propios: hospitales y clínicas registrados + guías de estabilización
-        hospitales = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="hospital", lat=lat, lon=lon, radio_m=10000)
-        clinicas = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="clinica", lat=lat, lon=lon, radio_m=10000)
+        hospitales = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="hospital", lat=lat, lon=lon, radio_m=10000 * factor)
+        clinicas = await state.usar_herramienta(self.name, "consultar_lugares_propios", categoria="clinica", lat=lat, lon=lon, radio_m=10000 * factor)
         centros = sorted(hospitales + clinicas, key=lambda x: x["distancia_m"])[:5]
         for c in centros:
             c["fuente"] = "propia"
@@ -34,10 +37,13 @@ class SaludAgent(BaseAgent):
         # 3. Si los datos propios no alcanzan, se complementa con el servicio de mapas
         if len(centros) < 3:
             try:
-                externos = await state.usar_herramienta(self.name, "buscar_lugares_externos", categoria="hospital", lat=lat, lon=lon, radio_m=5000)
+                externos = await state.usar_herramienta(self.name, "buscar_lugares_externos", categoria="hospital", lat=lat, lon=lon, radio_m=5000 * factor)
                 centros += externos[:5]
             except Exception:
                 pass
+        # Pocos centros: el orquestador reintenta con más radio antes de llamar al modelo
+        if pedir_reintento(state, len(centros)):
+            return {"reintento": f"solo {len(centros)} centros en {10 * factor} km"}
 
         guias = await state.usar_herramienta(self.name, "consultar_guias_estabilizacion")
 

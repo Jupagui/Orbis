@@ -8,6 +8,24 @@ log = structlog.get_logger()
 # Centro de Bogotá: solo se usa como referencia cuando el usuario no dio ubicación
 BOGOTA_CENTRO = (4.6097, -74.0817)
 
+# Ciclo de reintento del orquestador (LangGraph): si las herramientas devuelven menos de
+# MIN_CANDIDATOS lugares, el agente pide volver a ejecutarse una vez con el radio ×FACTOR_RADIO.
+MIN_CANDIDATOS = 3
+MAX_REINTENTOS = 1
+FACTOR_RADIO = 4
+
+
+def pedir_reintento(state: OrchestratorState, candidatos: int) -> bool:
+    """Lo llaman Salud, Taller y Explora apenas consultan sus herramientas, ANTES de llamar al modelo
+    y de ejecutar acciones. Si hay muy pocos candidatos y aún no se reintentó, marca el caso para que
+    el orquestador vuelva a ejecutar el agente con más radio. Así no se gasta una llamada a Gemini ni
+    se guardan acciones con un resultado pobre."""
+    state.context["candidatos_encontrados"] = candidatos
+    if candidatos < MIN_CANDIDATOS and state.context.get("reintentos", 0) < MAX_REINTENTOS:
+        state.context["necesita_reintento"] = True
+        return True
+    return False
+
 REGLA_GROUNDING = """
 REGLAS DE VERACIDAD:
 - Usa SOLAMENTE lugares que aparezcan en la lista proporcionada. Nunca inventes nombres, teléfonos, precios ni direcciones.
