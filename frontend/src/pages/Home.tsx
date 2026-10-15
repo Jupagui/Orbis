@@ -146,7 +146,8 @@ export default function Home() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSubmit(e)}
                 style={{
                   width: '100%',
-                  padding: '1.2rem 1rem 1.2rem 3.5rem',
+                  // Deja espacio a la derecha para la cámara y, si hay texto, para el botón Analizar
+                  padding: `1.2rem ${desc ? '12.5rem' : '4.5rem'} 1.2rem 3.5rem`,
                   fontSize: '1.1rem',
                   borderRadius: '30px',
                   border: '2px solid var(--border)',
@@ -156,13 +157,44 @@ export default function Home() {
                   transition: 'border-color 0.3s'
                 }}
               />
+              {/* Cámara: adjuntar una foto sin elegir antes una categoría */}
+              <label
+                title="Adjuntar una foto"
+                aria-label="Adjuntar una foto"
+                style={{ position: 'absolute', right: desc ? '8.5rem' : '0.6rem', top: '0.5rem', bottom: '0.5rem', width: '3rem', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', cursor: 'pointer', color: imagen ? 'var(--on-primary)' : 'var(--primary)', backgroundColor: imagen ? 'var(--secondary)' : 'transparent', transition: 'background-color 0.2s' }}
+              >
+                <Camera size={22} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => elegirImagen(e.target.files?.[0] || null)}
+                  style={{ display: 'none' }}
+                />
+              </label>
               {desc && (
-                <button 
+                <button
                   onClick={handleSubmit}
-                  style={{ position: 'absolute', right: '0.5rem', top: '0.5rem', bottom: '0.5rem', padding: '0 1.5rem', borderRadius: '25px', backgroundColor: 'var(--primary)', color: 'var(--on-primary)', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
+                  disabled={loading}
+                  style={{ position: 'absolute', right: '0.5rem', top: '0.5rem', bottom: '0.5rem', padding: '0 1.5rem', borderRadius: '25px', backgroundColor: 'var(--primary)', color: 'var(--on-primary)', border: 'none', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer' }}
                 >
-                  Analizar
+                  {loading ? 'Analizando…' : 'Analizar'}
                 </button>
+              )}
+
+              {/* Vista previa de la foto adjunta */}
+              {preview && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginTop: '0.8rem', padding: '0.5rem 0.8rem', backgroundColor: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+                  <img src={preview} alt="Foto adjunta" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: 'var(--radius-sm)' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{imagen?.name}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {desc ? 'Se enviará junto con tu descripción.' : 'Escribe qué necesitas para poder analizar la foto.'}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => elegirImagen(null)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                    Quitar
+                  </button>
+                </div>
               )}
             </div>
 
