@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Send, Loader2 } from 'lucide-react';
 import { getChat, enviarPregunta, type MensajeChat } from '../../services/api';
+import { Button } from '../../ui/Button';
+import { Chip } from '../../ui/Badges';
+import { ChatBubble, TypingDots } from '../../ui/Chat';
+import { Icon } from '../../ui/Icon';
+import { Card, CardHeader } from '../../ui/Surfaces';
 
 const SUGERENCIAS = ['¿Cuál opción me queda más cerca?', '¿Qué debo hacer mientras tanto?', '¿De dónde sale esta información?'];
 
@@ -45,54 +49,34 @@ export default function ChatCaso({ casoId }: { casoId: string }) {
   };
 
   return (
-    <section style={{ backgroundColor: 'var(--surface-1)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-      <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '1.1rem', color: 'var(--primary)' }}>
-        <MessageCircle size={18} /> Pregúntale a ORBIS sobre este caso
-      </h2>
-      <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-        Responde solo con la información del caso, los datos propios y lo consultado en el mapa.
-      </p>
+    <Card className="chat">
+      <CardHeader icon="chat" title="Pregúntale a ORBIS sobre este caso" />
+      <p className="small muted">Responde solo con la información del caso, los datos propios y lo consultado en el mapa.</p>
 
-      <div ref={cajaRef} style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+      <div ref={cajaRef} className="chat-log" role="log" aria-live="polite" aria-label="Conversación del caso">
         {mensajes.length === 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {SUGERENCIAS.map((s) => (
-              <button key={s} onClick={() => enviar(s)} style={{ padding: '0.4rem 0.8rem', borderRadius: '20px', border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.85rem' }}>
-                {s}
-              </button>
-            ))}
+          <div className="chat-sugg">
+            {SUGERENCIAS.map((s) => <Chip key={s} onClick={() => enviar(s)}>{s}</Chip>)}
           </div>
         )}
         {mensajes.map((m, i) => (
-          <div key={i} style={{
-            alignSelf: m.rol === 'usuario' ? 'flex-end' : 'flex-start',
-            maxWidth: '85%', padding: '0.6rem 0.9rem', borderRadius: 'var(--radius-md)', whiteSpace: 'pre-wrap', fontSize: '0.9rem',
-            backgroundColor: m.rol === 'usuario' ? 'var(--primary)' : 'var(--surface-2)',
-            color: m.rol === 'usuario' ? 'var(--on-primary)' : 'var(--text)',
-          }}>
-            {conNegritas(m.contenido)}
-          </div>
+          <ChatBubble key={i} rol={m.rol}>{conNegritas(m.contenido)}</ChatBubble>
         ))}
-        {mutation.isPending && (
-          <div style={{ alignSelf: 'flex-start', color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-            <Loader2 size={14} className="animate-spin" /> Consultando el caso…
-          </div>
-        )}
+        {mutation.isPending && <TypingDots />}
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); enviar(pregunta); }} style={{ display: 'flex', gap: '0.5rem' }}>
-        <input
-          value={pregunta}
-          onChange={(e) => setPregunta(e.target.value)}
-          placeholder="Escribe tu pregunta…"
-          aria-label="Pregunta sobre el caso"
-          style={{ flex: 1, padding: '0.7rem 1rem', borderRadius: '20px', border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--text)' }}
-        />
-        <button type="submit" disabled={!pregunta.trim() || mutation.isPending} aria-label="Enviar pregunta"
-          style={{ padding: '0 1rem', borderRadius: '20px', border: 'none', backgroundColor: 'var(--primary)', color: 'var(--on-primary)', cursor: 'pointer', opacity: !pregunta.trim() || mutation.isPending ? 0.5 : 1 }}>
-          <Send size={16} />
-        </button>
+      <form className="chat-form" onSubmit={(e) => { e.preventDefault(); enviar(pregunta); }}>
+        <div className="field">
+          <input
+            value={pregunta}
+            onChange={(e) => setPregunta(e.target.value)}
+            placeholder="Escribe tu pregunta…"
+            aria-label="Pregunta sobre el caso"
+          />
+        </div>
+        <Button type="submit" iconOnly icon="enviar" aria-label="Enviar pregunta" disabled={!pregunta.trim() || mutation.isPending} />
       </form>
-    </section>
+      <p className="small muted" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}><Icon name="info" />Si no tiene el dato verificado, te lo dirá.</p>
+    </Card>
   );
 }

@@ -1,15 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { ArrowLeft, Map as MapIcon, Loader2 } from 'lucide-react';
 import { apiClient } from '../services/api';
+import { Button } from '../ui/Button';
+import { Chip } from '../ui/Badges';
+import { Alert } from '../ui/Surfaces';
+import { Icon } from '../ui/Icon';
+import { OrbitSpinner } from '../ui/Surfaces';
+import { TopoRadar } from '../ui/backgrounds/TopoRadar';
+import { LISTA_MODULOS, moduloPorTipo } from '../ui/modules';
+import { leerVar, useTema } from '../ui/theme';
+import { vars } from '../ui/cls';
+
+const FILTROS = [{ valor: 'todos', texto: 'Todos' }, ...LISTA_MODULOS.map((m) => ({ valor: m.key, texto: m.label }))];
 
 export default function Heatmap() {
   const [casos, setCasos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fallo, setFallo] = useState(false);
   const [filtro, setFiltro] = useState<string>('todos');
   const navigate = useNavigate();
+  useTema(); // los marcadores se repintan con los colores del tema activo
 
   useEffect(() => {
     const fetchCasos = async () => {
@@ -18,6 +30,7 @@ export default function Heatmap() {
         setCasos(response.data);
       } catch (e) {
         console.error(e);
+        setFallo(true);
       } finally {
         setLoading(false);
       }
@@ -25,83 +38,72 @@ export default function Heatmap() {
     fetchCasos();
   }, []);
 
-  const getMarkerColor = (tipo: string) => {
-    switch (tipo) {
-      case 'vial': return '#f43f5e';
-      case 'salud': return '#3b82f6';
-      case 'comida': 
-      case 'sabor': return '#f59e0b';
-      case 'taller': return '#64748b';
-      case 'explora': return '#8b5cf6';
-      default: return '#4ade80';
-    }
+  const colorDe = (tipo: string) => {
+    const m = moduloPorTipo(tipo);
+    return (m && leerVar(m.accent)) || leerVar('--ok') || '#6FCF97';
   };
 
-  const casosFiltrados = filtro === 'todos' ? casos : casos.filter(c => c.tipo === filtro || (filtro === 'sabor' && c.tipo === 'comida'));
+  const casosFiltrados = filtro === 'todos' ? casos : casos.filter((c) => moduloPorTipo(c.tipo)?.key === filtro);
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <header style={{ padding: '0.8rem 2%', borderBottom: '1px solid var(--border)', backgroundColor: 'var(--surface-1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-            <ArrowLeft size={18} />
-          </button>
-          <h1 style={{ margin: 0, color: 'var(--primary)', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <MapIcon size={18} /> Tablero
-          </h1>
+    <div className="map-page">
+      {loading ? (
+        <div className="map-state">
+          <div className="bg-local"><TopoRadar /></div>
+          <div><OrbitSpinner grande etiqueta="Cargando el tablero" /><p className="muted">Cargando los casos…</p></div>
         </div>
-        
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {['todos', 'vial', 'salud', 'sabor', 'taller', 'explora'].map(t => (
-            <button 
-              key={t}
-              onClick={() => setFiltro(t)}
-              style={{
-                padding: '0.4rem 0.8rem',
-                borderRadius: '4px',
-                border: '1px solid var(--border)',
-                backgroundColor: filtro === t ? getMarkerColor(t) : 'var(--surface-2)',
-                color: filtro === t ? '#fff' : 'var(--text)',
-                cursor: 'pointer',
-                fontSize: '0.8rem',
-                textTransform: 'uppercase'
-              }}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      <main style={{ flex: 1, position: 'relative' }}>
-        {loading ? (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Loader2 className="animate-spin" size={48} color="var(--primary)" />
-          </div>
-        ) : (
-          <MapContainer center={[4.65, -74.08]} zoom={12} style={{ height: '100%', width: '100%' }}>
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {casosFiltrados.map((caso, idx) => (
+      ) : (
+        <MapContainer center={[4.65, -74.08]} zoom={12} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+          <ZoomControl position="bottomright" />
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          {casosFiltrados.map((caso, idx) => {
+            const color = colorDe(caso.tipo);
+            return (
               <CircleMarker
-                key={idx}
+                key={`${idx}-${color}`}
                 center={[caso.lat, caso.lon]}
-                pathOptions={{ color: getMarkerColor(caso.tipo), fillColor: getMarkerColor(caso.tipo), fillOpacity: 0.8, weight: 1 }}
+                pathOptions={{ color, fillColor: color, fillOpacity: 0.8, weight: 1 }}
                 radius={6}
               >
                 <Popup>
-                  <div style={{ color: '#000', fontFamily: 'Century Gothic, sans-serif' }}>
-                    <strong style={{ textTransform: 'uppercase' }}>{caso.tipo}</strong><br/>
+                  <div className="pop">
+                    <strong>{moduloPorTipo(caso.tipo)?.label ?? caso.tipo}</strong>
                     {caso.descripcion}
                   </div>
                 </Popup>
               </CircleMarker>
-            ))}
-          </MapContainer>
-        )}
-      </main>
+            );
+          })}
+        </MapContainer>
+      )}
+
+      <aside className="map-panel glass" aria-label="Filtros del tablero">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)', justifyContent: 'space-between' }}>
+          <div>
+            <p className="eyebrow">Tablero de calor</p>
+            <h1>Casos en Bogotá</h1>
+          </div>
+          <Button variant="ghost" iconOnly icon="prev" aria-label="Volver al inicio" onClick={() => navigate('/')} />
+        </div>
+        <div className="legend" role="group" aria-label="Filtrar por módulo">
+          {FILTROS.map((f) => {
+            const m = moduloPorTipo(f.valor);
+            return (
+              <Chip key={f.valor} pressed={filtro === f.valor} onClick={() => setFiltro(f.valor)} style={m ? vars({ '--accent': `var(${m.accent})` }) : undefined}>
+                {m ? <span className="swatch" aria-hidden="true" /> : <Icon name="tablero" />}
+                {f.texto}
+              </Chip>
+            );
+          })}
+        </div>
+        <p className="small muted" aria-live="polite">
+          <span className="count">{casosFiltrados.length}</span> {casosFiltrados.length === 1 ? 'caso' : 'casos'} con ubicación
+        </p>
+        {fallo && <Alert tone="danger" title="No se pudieron cargar los casos" role="alert"><p>Revisa que el servidor esté activo e inténtalo de nuevo.</p></Alert>}
+      </aside>
     </div>
   );
 }

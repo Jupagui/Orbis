@@ -1,5 +1,7 @@
-import { MapContainer, TileLayer, CircleMarker, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { pinIcon } from '../../ui/pinIcon';
+import { leerVar, useTema } from '../../ui/theme';
 
 interface Punto {
   nombre: string;
@@ -14,6 +16,7 @@ interface Props {
 }
 
 export default function MapaCaso({ origen, lugares, conectar = false }: Props) {
+  useTema(); // vuelve a leer los colores al cambiar el tema
   const puntos = lugares
     .filter((l) => l.lat != null && l.lon != null)
     .map((l) => ({ nombre: l.nombre, lat: l.lat as number, lon: l.lon as number }));
@@ -26,28 +29,28 @@ export default function MapaCaso({ origen, lugares, conectar = false }: Props) {
   ];
 
   return (
-    <div style={{ height: '280px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+    <div className="map-box" role="region" aria-label="Mapa del caso">
       <MapContainer center={centro} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {conectar && linea.length > 1 && <Polyline positions={linea} pathOptions={{ color: '#B79CED', dashArray: '6 6' }} />}
+        {conectar && linea.length > 1 && <Polyline positions={linea} pathOptions={{ color: leerVar('--m-explora') || '#B79CED', dashArray: '6 6', weight: 3 }} />}
         {origen && (
-          <CircleMarker center={[origen.lat, origen.lon]} radius={9} pathOptions={{ color: '#fff', fillColor: '#6EA8FE', fillOpacity: 1, weight: 3 }}>
+          <Marker position={[origen.lat, origen.lon]} icon={pinIcon('user')}>
             <Popup>
               <strong>Tu ubicación</strong>
               <br />
               {origen.fuente === 'referencia' ? 'No confirmada (referencia)' : origen.texto}
             </Popup>
-          </CircleMarker>
+          </Marker>
         )}
         {puntos.map((p, i) => (
-          <CircleMarker key={i} center={[p.lat, p.lon]} radius={8} pathOptions={{ color: '#0B0D12', fillColor: '#C9A45C', fillOpacity: 1, weight: 2 }}>
+          <Marker key={i} position={[p.lat, p.lon]} icon={pinIcon('place', i + 1)}>
             <Popup>
               <strong>{i + 1}. {p.nombre}</strong>
             </Popup>
-          </CircleMarker>
+          </Marker>
         ))}
       </MapContainer>
     </div>

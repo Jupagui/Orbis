@@ -38,10 +38,10 @@ export const getCasos = async (orden: 'recientes' | 'prioridad' = 'recientes') =
 // Colores y textos de la prioridad que asigna el Verificador
 export const PRIORIDADES: Record<string, { texto: string; color: string }> = {
   critica: { texto: 'Crítica', color: 'var(--danger)' },
-  alta: { texto: 'Alta', color: 'var(--warning)' },
+  alta: { texto: 'Alta', color: 'var(--warn)' },
   media: { texto: 'Media', color: 'var(--info)' },
-  baja: { texto: 'Baja', color: 'var(--success)' },
-  normal: { texto: 'Sin prioridad', color: 'var(--text-muted)' },
+  baja: { texto: 'Baja', color: 'var(--ok)' },
+  normal: { texto: 'Sin prioridad', color: 'var(--muted)' },
 };
 
 export const getCaso = async (id: string) => {

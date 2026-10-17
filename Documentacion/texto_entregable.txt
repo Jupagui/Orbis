@@ -1,0 +1,170 @@
+ 
+ 
+Actividad entregable – Unidad III 
+ 
+Solución inteligente multimodal con herramientas, geolocalización y agentes 
+Introducción 
+En esta actividad se desarrollará una aplicación web que integre diferentes capacidades de 
+inteligencia artificial para resolver un problema relacionado con movilidad, ubicación y 
+consulta de servicios dentro de una ciudad. 
+La solución deberá ir más allá de un chatbot convencional. El sistema deberá recibir 
+información del usuario, analizar diferentes tipos de entrada, utilizar información propia y 
+fuentes externas, consultar herramientas, coordinar agentes especializados y e jecutar 
+acciones dentro de la aplicación. 
+A partir de los conceptos y prácticas desarrollados durante la unidad, cada grupo deberá 
+diseñar e implementar su propia arquitectura y tomar decisiones sobre las tecnologías, 
+modelos y servicios que utilizará. 
+Contexto del problema 
+Se desarrollará una solución inteligente de movilidad y localización de servicios urbanos. 
+El usuario podrá indicar una necesidad, proporcionar una descripción textual, adjuntar una 
+imagen relacionada con el caso e indicar un punto de origen o ubicación. 
+El sistema deberá analizar la información suministrada, consultar los datos propios 
+disponibles y utilizar un servicio externo de mapas o geolocalización  para identificar 
+alternativas relevantes, obtener información geográfica y apoyar la recomendación final. 
+La solución deberá permitir realizar preguntas posteriores mediante un chat contextual, 
+utilizar herramientas para consultar información y ejecutar acciones relacionadas con el 
+caso. Además, deberá incorporar agentes especializados que trabajen de manera 
+coordinada dentro del proceso. 
+Los grupos desarrollarán este mismo caso de estudio , pero deberán investigar y tomar sus 
+propias decisiones respecto a la API de geolocalización, modelo de IA, diseño de 
+herramientas, agentes y arquitectura de implementación. 
+Fase 1. Diseño y arquitectura de la solución 
+Defina el alcance específico de la solución, los usuarios a quienes estará dirigida y las 
+principales funcionalidades que implementará. 
+ 
+ 
+--- PAGINA ---
+ 
+ 
+Diseñe la arquitectura de la solución identificando como mínimo: 
+- Interfaz web. 
+- Backend. 
+- Modelo de inteligencia artificial. 
+- Datos propios de la aplicación. 
+- Herramientas disponibles. 
+- Servicio externo de mapas o geolocalización. 
+- Agentes especializados y mecanismo de coordinación. 
+- Acciones que podrá ejecutar el sistema. 
+La arquitectura deberá corresponder con la solución realmente implementada. 
+Fase 2. Análisis inteligente y multimodal 
+La aplicación deberá permitir que el usuario describa su necesidad mediante texto e 
+incorporar al menos un tipo adicional de entrada, como una imagen relacionada con el caso. 
+El sistema deberá analizar la información recibida mediante un modelo de IA y producir un 
+resultado estructurado que pueda ser utilizado por la aplicación. 
+El grupo deberá definir los campos de esta respuesta de acuerdo con su problema. No se 
+considerará suficiente presentar únicamente un bloque de texto generado por el modelo. 
+La solución deberá identificar también situaciones en las cuales la información 
+proporcionada sea insuficiente, contradictoria o no corresponda con el caso analizado. 
+Fase 3. Datos propios y geolocalización 
+La aplicación deberá manejar datos propios relacionados con el contexto seleccionado. 
+Estos datos podrán corresponder, por ejemplo, a servicios, lugares, categorías, condiciones, 
+registros anteriores u otra información necesaria para resolver el problema. 
+Adicionalmente, deberá integrarse al menos una API o servicio externo relacionado con 
+mapas o geolocalización que permita obtener información real necesaria para la solución. 
+Dependiendo del caso seleccionado, podrá utilizarse para consultar aspectos como 
+coordenadas, lugares, distancias, rutas, puntos cercanos u otra información geográfica 
+pertinente. 
+ 
+ 
+--- PAGINA ---
+ 
+ 
+La selección, investigación e integración del servicio de geolocalización hace parte de la 
+actividad. El grupo deberá determinar qué alternativa resulta adecuada para su solución y 
+cómo consumirla desde la aplicación. 
+Fase 4. Herramientas y acciones 
+El sistema deberá disponer de herramientas que permitan al modelo o a los agentes obtener 
+información adicional antes de generar una respuesta. 
+Como mínimo deberá implementarse: 
+- Una herramienta que consulte datos propios de la aplicación. 
+- Una herramienta que utilice el servicio externo de mapas o geolocalización. 
+- Una acción que produzca un cambio o resultado dentro del sistema. 
+La acción dependerá del caso desarrollado. Podría consistir, por ejemplo, en registrar una 
+solicitud, almacenar una recomendación o recorrido, crear un caso, actualizar un registro o 
+ejecutar otra operación coherente con la solución. 
+No es suficiente que el modelo describa la acción que debería realizarse; la aplicación 
+deberá demostrar su ejecución. 
+Algunas alternativas de servicios de mapas y geolocalización que pueden explorar son: 
+- OpenStreetMap / Nominatim: geocodificación y búsqueda de ubicaciones. El servicio 
+público es gratuito, pero tiene políticas de uso y límites estrictos. OSM Foundation 
+Operations 
+- OpenRouteService: rutas, distancias y servicios basados en datos de OpenStreetMap. 
+- Geoapify: geocodificación, lugares, rutas y mapas. Actualmente ofrece plan gratuito de 
+hasta 3.000 créditos diarios y no requiere tarjeta para registrarse. Geoapify 
+- LocationIQ: geocodificación, rutas y mapas. Su plan gratuito ofrece actualmente hasta 
+5.000 solicitudes diarias. LocationIQ 
+Los grupos podrán utilizar estas u otras alternativas, previa revisión de sus condiciones, 
+límites de uso y documentación. 
+Fase 5. Chat contextual 
+La aplicación deberá incorporar un chat contextual asociado al caso que se está procesando. 
+El usuario podrá realizar preguntas posteriores al análisis inicial y las respuestas deberán 
+considerar la información del caso, los datos propios disponibles y los resultados obtenidos 
+mediante las herramientas utilizadas. 
+El sistema deberá evitar presentar como hechos datos que no hayan sido proporcionados, 
+consultados o verificados. 
+--- PAGINA ---
+ 
+ 
+Fase 6. Agentes y orquestación 
+La solución deberá incorporar mínimo dos agentes con responsabilidades diferentes. 
+Cada agente deberá tener una función claramente identificable dentro del proceso. El grupo 
+deberá definir: 
+- Qué responsabilidad tiene cada agente. 
+- Qué información recibe. 
+- Qué herramientas puede utilizar. 
+- Qué resultado produce. 
+ 
+- Cómo se coordinan los agentes para resolver la solicitud. 
+Deberá existir un mecanismo de orquestación que permita determinar el orden o las 
+condiciones bajo las cuales participan los diferentes agentes y herramientas. 
+No se considerará suficiente crear varios prompts y denominarlos agentes; deberá 
+evidenciarse una separación real de responsabilidades dentro del flujo de la aplicación. 
+Fase 7. Persistencia y trazabilidad 
+La aplicación deberá conservar información de los casos procesados mediante un 
+mecanismo de persistencia. 
+Como mínimo deberá ser posible recuperar posteriormente información relacionada con el 
+caso, el resultado generado y la acción realizada. 
+También deberá existir algún mecanismo que permita identificar qué herramientas o 
+agentes participaron en el procesamiento del caso, de manera que pueda explicarse cómo 
+se obtuvo el resultado final. 
+Modelo de inteligencia artificial 
+Durante las prácticas de clase se trabajará con un modelo específico para facilitar el 
+desarrollo guiado. Para esta actividad no es obligatorio utilizar el mismo modelo. 
+El grupo podrá seleccionar el modelo que considere adecuado para su solución. Podrá 
+utilizar, entre otros, Gemini, modelos de OpenAI, Claude, Llama, Gemma o Mistral, siempre 
+que la alternativa seleccionada permita implementar las capacidades requeridas en el 
+proyecto. 
+También podrán combinarse modelos cuando exista una justificación técnica para hacerlo. 
+En la sustentación deberán explicar brevemente qué modelo o modelos utilizaron, por qué 
+fueron seleccionados y qué función cumplen dentro de la solución. La selección deberá 
+--- PAGINA ---
+ 
+ 
+considerar aspectos como capacidades, multimodalidad, disponibilidad, límites de uso, 
+latencia y costo. 
+Evidencia de aprendizaje 
+La entrega deberá realizarse mediante un enlace al repositorio de GitHub que contenga el 
+código fuente completo y actualizado de la solución desarrollada. 
+El repositorio deberá incluir: 
+• Código fuente del frontend y backend. 
+• Archivo README.md con la descripción de la solución, arquitectura implementada, 
+tecnologías utilizadas, modelo(s) de IA y servicios externos integrados, así como las 
+instrucciones necesarias para configurar y ejecutar el proyecto. 
+• Archivo env.example con las variables de entorno requeridas, sin incluir claves, 
+contraseñas o credenciales reales. 
+La aplicación deberá encontrarse funcional al momento de la revisión y evidenciar el 
+cumplimiento de los requisitos establecidos en las diferentes fases de la actividad: análisis 
+con IA, multimodalidad, respuesta estructurada, datos propios, geolocalizació n, 
+herramientas, acciones, chat contextual, orquestación de agentes, persistencia y 
+trazabilidad. 
+Actividad experiencial – Unidad III 
+Para la actividad experiencial de la Unidad III no se desarrollará una aplicación adicional. 
+Como evidencia deberán entregar únicamente el archivo README.md actualizado 
+correspondiente a su proyecto final, en el cual se presente de manera clara la descripción 
+del proyecto, arquitectura, tecnologías utilizadas, instrucciones de instalación y ejecución y 
+demás información necesaria para comprender la solución desarrollada. 
+Adicionalmente, deberán preparar el proyecto final para su sustentación del 17 de octubre 
+de 2026. Durante la sustentación deberán demostrar el funcionamiento de la solución y 
+estar preparados para explicar y justificar las decisiones técnicas tomadas dura nte su 
+desarrollo. 
+ 

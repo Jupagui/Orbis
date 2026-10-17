@@ -1,60 +1,27 @@
-:root {
-  /* Duraciones */
-  --dur-instant: 80ms;
-  --dur-fast: 160ms;
-  --dur-base: 240ms;
-  --dur-slow: 420ms;
-  --dur-deliberate: 700ms;
-  
-  /* Curvas de aceleración */
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-}
+/* Fotogramas clave compartidos. Las duraciones y curvas viven en tokens.css. */
 
-/* Animaciones usadas por los componentes (style={{ animation: 'fade-in …' }}) */
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+@keyframes kenburns { from { transform: scale(1) translate3d(0, 0, 0); } to { transform: scale(1.08) translate3d(-1.5%, 1%, 0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(0.875rem); } to { opacity: 1; transform: none; } }
+@keyframes pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes slidein-right { from { opacity: 0; transform: translateX(6%); } to { opacity: 1; transform: none; } }
+@keyframes slidein-up { from { opacity: 0; transform: translateY(8%); } to { opacity: 1; transform: none; } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes live { 70% { box-shadow: 0 0 0 0.3rem transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes flowh { to { background-position: 20px 0; } }
+@keyframes flowv { to { background-position: 0 20px; } }
+@keyframes scan-step { 0%, 12% { background: color-mix(in srgb, var(--gold) 12%, transparent); } 24%, 100% { background: transparent; } }
+@keyframes typing { 0%, 80%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-0.25rem); opacity: 1; } }
 
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes scale-up {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Íconos de carga (Loader2) */
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
+.rise { animation: rise var(--dur-4) var(--ease-emph) both; animation-delay: calc(var(--i, 0) * 70ms); }
 
 @media (prefers-reduced-motion: reduce) {
-  :root {
-    --dur-instant: 0ms;
-    --dur-fast: 0ms;
-    --dur-base: 0ms;
-    --dur-slow: 0ms;
-    --dur-deliberate: 0ms;
-  }
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    transition-duration: 120ms !important;
     scroll-behavior: auto !important;
   }
 }
